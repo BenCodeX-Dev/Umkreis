@@ -1,0 +1,10 @@
+[
+  {
+    "id": "beispiel-stadt",
+    "name": "Veranstaltungskalender Beispielstadt",
+    "url": "https://www.example.org/veranstaltungen.ics",
+    "website": "https://www.example.org/veranstaltungen",
+    "category": "community",
+    "area": { "label": "Beispielstadt", "lat": 49.87, "lon": 8.65 }
+  }
+]

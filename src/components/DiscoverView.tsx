@@ -1,0 +1,177 @@
+import { useState } from 'react';
+import { CITIES } from '../../shared/cities.ts';
+import type { CategoryId, EventsRequest, GeocodeResult } from '../../shared/types.ts';
+import { navigateTo, useDebouncedValue } from '../hooks/hooks.ts';
+import { useEvents } from '../hooks/useEvents.ts';
+import type { ServerStatus } from '../lib/api.ts';
+import { RANGES, rangeWindow, type RangeId } from '../lib/dates.ts';
+import { groupByDay, rankEvents } from '../lib/filter.ts';
+import type { HomeLocation } from '../lib/location.ts';
+import type { CardActions } from './EventCard.tsx';
+import { EventList } from './EventList.tsx';
+import { FilterBar, RadiusControl, type Filters } from './FilterBar.tsx';
+import { Icon } from './Icon.tsx';
+import { EmptyState, ErrorState, LoadingState, type Suggestion } from './StatusMessage.tsx';
+
+const CITY_RADIUS_KM = 25;
+
+interface Props extends CardActions {
+  scope: 'local' | 'de';
+  home?: HomeLocation;
+  radius: number;
+  onRadiusChange: (km: number) => void;
+  interests: CategoryId[];
+  now: Date;
+  status: ServerStatus | null;
+  onEditLocation: () => void;
+  onEditInterests: () => void;
+}
+
+export function DiscoverView({ scope, home, radius, onRadiusChange, interests, now, status, onEditLocation, onEditInterests, ...actions }: Props) {
+  const [filters, setFilters] = useState<Filters>({ range: scope === 'local' ? 'heute' : '7tage', categories: [], text: '', sort: 'zeit' });
+  const [city, setCity] = useState<GeocodeResult | null>(null);
+  const patch = (p: Partial<Filters>) => setFilters((f) => ({ ...f, ...p }));
+
+  const debRadius = useDebouncedValue(radius, 350);
+  const debText = useDebouncedValue(filters.text.trim(), 400);
+  const win = rangeWindow(filters.range, now);
+  const from = win.from.toISOString();
+  const to = win.to.toISOString();
+
+  let req: EventsRequest | null = null;
+  if (scope === 'local') {
+    if (home) req = { scope: 'local', lat: home.lat, lon: home.lon, radiusKm: debRadius, from, to };
+  } else if (city) {
+    req = { scope: 'local', lat: city.lat, lon: city.lon, radiusKm: CITY_RADIUS_KM, from, to, q: debText || undefined };
+  } else {
+    // Germany-wide results are capped server-side, so the search text is applied there too.
+    req = { scope: 'de', from, to, q: debText || undefined };
+  }
+
+  const { loading, data, previous, error, retry } = useEvents(req);
+  const shown = data ?? (loading ? previous : undefined);
+
+  const origin = scope === 'local' ? home : (home ?? city ?? undefined);
+  const distanceSuffix = home ? 'entfernt' : city && scope === 'de' ? `von ${city.label}` : undefined;
+  const sort = filters.sort === 'entfernung' && !origin ? 'zeit' : filters.sort;
+  const ranked = shown
+    ? rankEvents(shown.events, { categories: filters.categories, text: filters.text, sort, interests, home: origin, now, windowFrom: win.from })
+    : [];
+  const groups = groupByDay(ranked, sort, win.from);
+
+  const phrase = RANGES.find((r) => r.id === filters.range)?.phrase ?? '';
+  const where =
+    scope === 'local' ? `im Umkreis von ${radius} km um ${home?.label ?? ''}` : city ? `in und um ${city.label} (${CITY_RADIUS_KM} km)` : 'in ganz Deutschland';
+  const countText = `${ranked.length} ${ranked.length === 1 ? 'Veranstaltung' : 'Veranstaltungen'} ${phrase} ${where}`;
+
+  const suggestions: Suggestion[] = [];
+  if (filters.text) suggestions.push({ label: 'Suche zurücksetzen', onClick: () => patch({ text: '' }) });
+  if (filters.categories.length) suggestions.push({ label: 'Alle Kategorien zeigen', onClick: () => patch({ categories: [] }) });
+  if (scope === 'local' && radius < 50) {
+    const next = radius < 25 ? 25 : 50;
+    suggestions.push({ label: `Umkreis auf ${next} km erweitern`, onClick: () => onRadiusChange(next) });
+  }
+  const widerRange: RangeId | null = filters.range === 'heute' || filters.range === 'morgen' || filters.range === 'wochenende' ? '7tage' : filters.range === '7tage' ? '14tage' : null;
+  if (filters.range === 'heute') suggestions.push({ label: 'Morgen ansehen', onClick: () => patch({ range: 'morgen' }) });
+  if (widerRange) suggestions.push({ label: `Nächste ${widerRange === '7tage' ? '7' : '14'} Tage`, onClick: () => patch({ range: widerRange }) });
+  if (scope === 'de' && city) suggestions.push({ label: 'Ganz Deutschland', onClick: () => setCity(null) });
+  if (scope === 'local') suggestions.push({ label: 'Deutschlandweit suchen', onClick: () => navigateTo('deutschland') });
+
+  const failed = shown?.sources.filter((s) => !s.ok) ?? [];
+  const hasIcs = status?.sources.some((s) => s.kind === 'ics');
+  const title =
+    scope === 'local' ? (filters.range === 'heute' ? 'Heute in deiner Nähe' : 'In deiner Nähe') : 'Deutschlandweit entdecken';
+
+  return (
+    <section className="view" aria-labelledby={`title-${scope}`}>
+      <header className="view-head">
+        <div>
+          <h1 id={`title-${scope}`} className="view-title">{title}</h1>
+          {scope === 'local' && home && (
+            <p className="view-sub">
+              <Icon name="pin" /> {home.label}{' '}
+              <button type="button" className="link-btn" onClick={onEditLocation}>ändern</button>
+            </p>
+          )}
+          {scope === 'de' && (
+            <p className="view-sub">Stöbere ohne eigenen Standort – oder wähle eine Stadt.</p>
+          )}
+        </div>
+      </header>
+
+      <div className="layout">
+        <div className="controls">
+          {scope === 'local' && <RadiusControl value={radius} onChange={onRadiusChange} />}
+
+          {scope === 'de' && (
+            <div className="panel region">
+              <span className="label" id={`region-${scope}`}>Region</span>
+              <div className="chips" role="group" aria-labelledby={`region-${scope}`}>
+                <button type="button" className="chip" aria-pressed={!city} onClick={() => setCity(null)}>Ganz Deutschland</button>
+                {CITIES.map((c) => (
+                  <button key={c.label} type="button" className="chip" aria-pressed={city?.label === c.label} onClick={() => setCity(c)}>
+                    {c.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <FilterBar value={filters} onChange={patch} canSortByDistance={!!origin} hasInterests={interests.length > 0} />
+
+          {interests.length === 0 && (
+            <p className="hint">
+              <button type="button" className="link-btn" onClick={onEditInterests}>Interessen wählen</button>, damit passende
+              Veranstaltungen hervorgehoben werden.
+            </p>
+          )}
+
+          {status?.mode === 'live' && !hasIcs && scope === 'local' && (
+            <p className="hint">
+              Märkte und Vereinsveranstaltungen erscheinen, sobald iCal-Kalender (z. B. von Stadt oder Vereinen) eingerichtet sind.
+              Bis dahin stammen die Ergebnisse nur aus den aktiven Quellen.
+            </p>
+          )}
+        </div>
+
+        <div className="feed">
+          {error ? (
+            <ErrorState message={error.message} onRetry={retry} suggestions={suggestions.filter((s) => !s.label.startsWith('Suche'))} />
+          ) : !shown ? (
+            <LoadingState />
+          ) : (
+            <>
+              <div className="result-bar">
+                <p className="result-count" role="status">
+                  {loading ? 'Aktualisiere …' : countText}
+                </p>
+              </div>
+              {failed.length > 0 && (
+                <p className="alert alert-warn">
+                  Nicht alle Quellen haben geantwortet: {failed.map((s) => `${s.name}${s.message ? ` (${s.message})` : ''}`).join('; ')}.
+                  Die Liste kann deshalb unvollständig sein.
+                </p>
+              )}
+              {shown.truncated && (
+                <p className="alert alert-info">Es gibt mehr Treffer als angezeigt. Grenze Zeitraum, Umkreis oder Suche ein.</p>
+              )}
+              {groups.length === 0 ? (
+                <EmptyState
+                  title={`Keine Veranstaltungen ${phrase} gefunden`}
+                  text={
+                    shown.events.length > 0
+                      ? 'Mit den aktuellen Filtern bleibt nichts übrig – oder die Veranstaltungen sind schon vorbei.'
+                      : `Für diesen Zeitraum liegen ${where} keine Einträge aus den verbundenen Quellen vor.`
+                  }
+                  suggestions={suggestions}
+                />
+              ) : (
+                <EventList groups={groups} now={now} distanceSuffix={distanceSuffix} busy={loading} {...actions} />
+              )}
+            </>
+          )}
+        </div>
+      </div>
+    </section>
+  );
+}
