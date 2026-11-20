@@ -63,7 +63,9 @@ export function DiscoverView({ scope, home, radius, onRadiusChange, interests, n
     req = { scope: 'de', from, to, q: debText || undefined };
   }
 
-  const { loading, data, previous, error, retry } = useEvents(req);
+  // Without any source there is nothing to ask for; the banner above explains how to add one.
+  const unconfigured = status?.mode === 'unconfigured';
+  const { loading, data, previous, error, retry } = useEvents(unconfigured ? null : req);
   const shown = data ?? (loading ? previous : undefined);
   useEffect(() => {
     if (data) onResults?.(data.events);
@@ -174,7 +176,13 @@ export function DiscoverView({ scope, home, radius, onRadiusChange, interests, n
         </div>
 
         <div className="feed">
-          {error ? (
+          {unconfigured ? (
+            <EmptyState
+              title="Noch keine Veranstaltungen"
+              text="Umkreis erfindet keine Einträge. Sobald eine Datenquelle eingerichtet ist (siehe Hinweis oben), erscheinen hier echte Termine."
+              suggestions={[]}
+            />
+          ) : error ? (
             <ErrorState message={error.message} onRetry={retry} suggestions={suggestions.filter((s) => !s.label.startsWith('Suche'))} />
           ) : !shown ? (
             <LoadingState />

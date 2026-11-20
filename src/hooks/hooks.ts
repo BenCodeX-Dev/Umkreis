@@ -3,10 +3,12 @@ import { readStored, writeStored } from '../lib/storage.ts';
 import { applyThemePref, isThemePref, resolveTheme, subscribeSystemTheme, systemPrefersDark, THEME_KEY, type ThemePref } from '../lib/theme.ts';
 
 /** State mirrored to localStorage (invalid stored values fall back to the initial value). */
-export function usePersistentState<T>(key: string, initial: T, isValid: (v: unknown) => v is T) {
+/** `repair` may rescue a stored value that fails `isValid` (e.g. keep the good entries of a list) instead of resetting it. */
+export function usePersistentState<T>(key: string, initial: T, isValid: (v: unknown) => v is T, repair?: (v: unknown) => T | undefined) {
   const [value, setValue] = useState<T>(() => {
     const stored = readStored(key);
-    return isValid(stored) ? stored : initial;
+    if (isValid(stored)) return stored;
+    return repair?.(stored) ?? initial;
   });
   useEffect(() => writeStored(key, value), [key, value]);
   return [value, setValue] as const;

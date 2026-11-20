@@ -31,8 +31,7 @@ function pinLabel(s: MapSpot): string {
   const first = s.events[0];
   const where = first.venue ?? first.area ?? 'Ort';
   const what = s.events.length === 1 ? first.title : `${s.events.length} Veranstaltungen`;
-  const notes = [s.approx && 'ungefähre Lage', s.demo && 'Beispiel, erfunden'].filter(Boolean).join(', ');
-  return `${what} – ${where}${notes ? ` (${notes})` : ''}`;
+  return `${what} – ${where}${s.approx ? ' (ungefähre Lage)' : ''}`;
 }
 
 function pinIcon(s: MapSpot, selected: boolean): L.DivIcon {
@@ -42,7 +41,6 @@ function pinIcon(s: MapSpot, selected: boolean): L.DivIcon {
     `cat-${s.events[0].category}`,
     n > 1 && 'has-count',
     s.approx && 'is-approx',
-    s.demo && 'is-demo',
     selected && 'is-selected',
     s.events.every((e) => e.status === 'cancelled') && 'is-cancelled',
   ]

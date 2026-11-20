@@ -2,7 +2,7 @@ import http from 'node:http';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createApiHandler } from './api.ts';
-import { loadServerConfig } from './config.ts';
+import { effectiveAllowedHosts, loadServerConfig } from './config.ts';
 import { createStaticHandler } from './static.ts';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -13,6 +13,8 @@ const api = createApiHandler(config);
 const serveStatic = createStaticHandler(path.join(root, 'dist'));
 const port = Number(process.env.PORT) || 8787;
 const host = process.env.HOST || '127.0.0.1';
+const allowedHosts = effectiveAllowedHosts(config, host, port);
+if (!allowedHosts) console.warn(`Warnung: HOST=${host} ohne ALLOWED_HOSTS – Anfragen unter jedem Hostnamen werden beantwortet.`);
 
 // The macOS app keeps our stdin open; when the app quits or crashes the pipe closes and the server follows.
 if (process.env.EXIT_ON_STDIN_CLOSE === '1') {
@@ -24,7 +26,7 @@ if (process.env.EXIT_ON_STDIN_CLOSE === '1') {
 http
   .createServer((req, res) => {
     const started = Date.now();
-    if (config.allowedHosts && !config.allowedHosts.includes((req.headers.host ?? '').toLowerCase())) {
+    if (allowedHosts && !allowedHosts.includes((req.headers.host ?? '').toLowerCase())) {
       res.writeHead(421, { 'Content-Type': 'text/plain; charset=utf-8' }).end('Unbekannter Host.');
       return;
     }
@@ -43,5 +45,5 @@ http
   })
   .listen(port, host, () => {
     const sources = [config.ticketmasterKey && 'Ticketmaster', config.feeds.length && `${config.feeds.length} iCal-Feed(s)`].filter(Boolean);
-    console.log(`Umkreis läuft auf http://${host}:${port} – Quellen: ${sources.join(', ') || 'keine (Demo-Modus)'}`);
+    console.log(`Umkreis läuft auf http://${host}:${port} – Quellen: ${sources.join(', ') || 'keine – TICKETMASTER_API_KEY oder iCal-Feeds einrichten (siehe README)'}`);
   });

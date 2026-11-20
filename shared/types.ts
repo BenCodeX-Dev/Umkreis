@@ -30,7 +30,6 @@ export interface EventItem {
   id: string;
   source: string;
   sourceName: string;
-  isDemo: boolean;
   title: string;
   /** ISO-8601 instant (UTC). */
   start: string;
@@ -44,6 +43,8 @@ export interface EventItem {
   location?: GeoPoint;
   /** true when `location` is only the feed's area centre, not the venue. */
   locationApprox?: boolean;
+  /** true when the source named a position that does not fit its area (or Germany); it is not used. */
+  locationRejected?: boolean;
   category: CategoryId;
   price?: PriceInfo;
   description?: string;
@@ -54,7 +55,7 @@ export interface EventItem {
   status?: EventStatus;
   /**
    * When Umkreis last downloaded this entry from its source (ISO). It says nothing about when the
-   * organiser last changed it. Absent for demo entries, which are never checked against anything.
+   * organiser last changed it.
    */
   checkedAt?: string;
 }
@@ -62,7 +63,7 @@ export interface EventItem {
 export interface SourceStatus {
   id: string;
   name: string;
-  kind: 'ticketmaster' | 'ics' | 'demo';
+  kind: 'ticketmaster' | 'ics';
   ok: boolean;
   count: number;
   message?: string;
@@ -70,8 +71,11 @@ export interface SourceStatus {
   checkedAt?: string;
 }
 
+/** `unconfigured`: no Ticketmaster key and no iCal feed is set up, so there is nothing to show. */
+export type SourceMode = 'live' | 'unconfigured';
+
 export interface EventsResponse {
-  mode: 'live' | 'demo';
+  mode: SourceMode;
   events: EventItem[];
   sources: SourceStatus[];
   truncated: boolean;

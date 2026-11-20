@@ -1,7 +1,7 @@
 import { isCategoryId } from '../../shared/categories.ts';
 import { isValidPoint } from '../../shared/geo.ts';
 import { safeHttpUrl } from '../../shared/text.ts';
-import type { EventItem, EventsRequest, EventsResponse, GeocodeResponse, GeocodeResult, SourceStatus } from '../../shared/types.ts';
+import type { EventItem, EventsRequest, EventsResponse, GeocodeResponse, GeocodeResult, SourceMode, SourceStatus } from '../../shared/types.ts';
 
 export class ApiError extends Error {
   code?: string;
@@ -18,14 +18,15 @@ export function sanitizeEvent(raw: unknown): EventItem | null {
   if (!raw || typeof raw !== 'object') return null;
   const e = raw as Record<string, unknown>;
   if (!isStr(e.id) || !isStr(e.title) || !e.title.trim() || !isStr(e.start) || Number.isNaN(Date.parse(e.start))) return null;
-  if (!isCategoryId(e.category) || typeof e.isDemo !== 'boolean' || !isStr(e.source) || !isStr(e.sourceName)) return null;
+  if (!isCategoryId(e.category) || !isStr(e.source) || !isStr(e.sourceName)) return null;
+  // Invented sample entries from an earlier version (demo mode) may still sit in saved lists: never show them.
+  if (e.isDemo === true || e.source === 'demo') return null;
   const opt = (v: unknown) => (isStr(v) && v.trim() ? v : undefined);
   const price = e.price && typeof e.price === 'object' ? (e.price as EventItem['price']) : undefined;
   return {
     id: e.id,
     source: e.source,
     sourceName: e.sourceName,
-    isDemo: e.isDemo,
     title: e.title,
     start: e.start,
     end: isStr(e.end) && !Number.isNaN(Date.parse(e.end)) ? e.end : undefined,
@@ -36,14 +37,29 @@ export function sanitizeEvent(raw: unknown): EventItem | null {
     address: opt(e.address),
     location: isValidPoint(e.location) ? e.location : undefined,
     locationApprox: e.locationApprox === true || undefined,
+    locationRejected: e.locationRejected === true || undefined,
     category: e.category,
     price: price && isStr(price.currency) ? price : undefined,
     description: opt(e.description),
     url: safeHttpUrl(e.url),
     urlLabel: opt(e.urlLabel),
     status: e.status === 'cancelled' || e.status === 'postponed' || e.status === 'rescheduled' ? e.status : undefined,
-    checkedAt: isStr(e.checkedAt) && !Number.isNaN(Date.parse(e.checkedAt)) && !e.isDemo ? e.checkedAt : undefined,
+    checkedAt: isStr(e.checkedAt) && !Number.isNaN(Date.parse(e.checkedAt)) ? e.checkedAt : undefined,
   };
+}
+
+/**
+ * Saved events from storage: keeps every entry that passes `sanitizeEvent`, so one damaged entry – or an invented
+ * sample saved under an earlier version – drops out on its own instead of taking the whole list with it.
+ */
+export function sanitizeSaved(raw: unknown): Record<string, EventItem> | undefined {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return undefined;
+  const out: Record<string, EventItem> = {};
+  for (const v of Object.values(raw)) {
+    const e = sanitizeEvent(v);
+    if (e) out[e.id] = e;
+  }
+  return out;
 }
 
 async function postJson(path: string, body: unknown, signal?: AbortSignal): Promise<unknown> {
@@ -72,7 +88,7 @@ export async function fetchEvents(req: EventsRequest, signal?: AbortSignal): Pro
   if (!data || !Array.isArray(data.events)) throw new ApiError('Die Antwort des Servers war unvollständig.', 'malformed');
   const events = data.events.map(sanitizeEvent).filter((e): e is EventItem => e !== null);
   return {
-    mode: data.mode === 'demo' ? 'demo' : 'live',
+    mode: data.mode === 'unconfigured' ? 'unconfigured' : 'live',
     events,
     sources: Array.isArray(data.sources) ? (data.sources as SourceStatus[]).filter((s) => s && isStr(s.name)) : [],
     truncated: data.truncated === true,
@@ -89,7 +105,7 @@ export async function geocodePlace(q: string, signal?: AbortSignal): Promise<Geo
 }
 
 export interface ServerStatus {
-  mode: 'live' | 'demo';
+  mode: SourceMode;
   sources: Array<{ id: string; name: string; kind: SourceStatus['kind'] }>;
 }
 
@@ -98,7 +114,7 @@ export async function fetchStatus(signal?: AbortSignal): Promise<ServerStatus | 
     const res = await fetch('/api/status', { signal });
     if (!res.ok) return null;
     const d = (await res.json()) as Partial<ServerStatus>;
-    if ((d.mode !== 'live' && d.mode !== 'demo') || !Array.isArray(d.sources)) return null;
+    if ((d.mode !== 'live' && d.mode !== 'unconfigured') || !Array.isArray(d.sources)) return null;
     return { mode: d.mode, sources: d.sources.filter((s) => s && isStr(s.name) && isStr(s.kind)) };
   } catch {
     return null;

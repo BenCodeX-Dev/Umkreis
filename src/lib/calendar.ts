@@ -1,7 +1,7 @@
 import { localDayKey, startOfLocalDay } from '../../shared/time.ts';
 import type { EventItem } from '../../shared/types.ts';
 
-const esc = (s: string) => s.replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/,/g, '\\,').replace(/\r?\n/g, '\\n');
+const esc = (s: string) => s.replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/,/g, '\\,').replace(/\r\n|\r|\n/g, '\\n');
 const utcStamp = (d: Date) => d.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
 const dateStamp = (d: Date) => localDayKey(d).replace(/-/g, '');
 
@@ -25,7 +25,7 @@ export function buildIcs(e: EventItem, now = new Date()): string {
     const endDay = e.end ? startOfLocalDay(new Date(Date.parse(e.end) - 1), 1) : startOfLocalDay(start, 1);
     lines.push(`DTEND;VALUE=DATE:${dateStamp(endDay)}`);
   }
-  lines.push(`SUMMARY:${esc((e.isDemo ? '[Beispiel] ' : '') + e.title)}`);
+  lines.push(`SUMMARY:${esc(e.title)}`);
   const where = [e.venue, e.address ?? e.area].filter(Boolean).join(', ');
   if (where) lines.push(`LOCATION:${esc(where)}`);
   const desc = [e.description, e.url && `Originalanzeige: ${e.url}`, `Quelle: ${e.sourceName}`].filter(Boolean).join('\n\n');

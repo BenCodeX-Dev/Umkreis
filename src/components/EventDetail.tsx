@@ -8,7 +8,7 @@ import type { RankedEvent } from '../lib/filter.ts';
 import { formatDistance, formatPrice, STATUS_LABEL } from '../lib/format.ts';
 import { STREET_LEVEL_NOTE } from '../lib/mapPrefs.ts';
 import { mapTarget, preferLink, type MapProvider } from '../lib/maps.ts';
-import { formatCheckedAt, freshness, missingDetails } from '../lib/quality.ts';
+import { formatCheckedAt, freshness, linkTarget, missingDetails } from '../lib/quality.ts';
 import type { CardActions } from './EventCard.tsx';
 import { Icon } from './Icon.tsx';
 
@@ -29,7 +29,10 @@ interface Props extends CardActions {
 const takenFmt = new Intl.DateTimeFormat('de-DE', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Europe/Berlin' });
 
 function positionNote(e: EventItem): string {
-  if (e.isDemo) return 'Erfundener Beispielort – keine echte Adresse.';
+  if (e.locationRejected)
+    return e.location
+      ? 'Die Quelle nennt eine Kartenposition außerhalb ihres Kalendergebiets – sie wird nicht verwendet. Gezeigt wird nur der Mittelpunkt des Kalendergebiets.'
+      : 'Die Quelle nennt eine Kartenposition außerhalb Deutschlands – sie wird nicht verwendet.';
   if (!e.location) return 'Die Quelle nennt keine Kartenposition.';
   if (e.locationApprox) return 'Nur ungefähre Lage: Mittelpunkt des Kalendergebiets, nicht der Veranstaltungsort.';
   return 'Kartenposition laut Quelle.';
@@ -42,6 +45,7 @@ export function EventDetail({ item, distanceSuffix, now, conflicts, sameSpot, op
   const missing = missingDetails(e);
   const map = mapTarget(e);
   const links = map ? preferLink(map, openIn) : null;
+  const target = e.url ? linkTarget(e.url) : null;
   const until = formatUntil(e);
   const saved = isSaved(e.id);
   const time = formatTime(e);
@@ -58,7 +62,7 @@ export function EventDetail({ item, distanceSuffix, now, conflicts, sameSpot, op
   return (
     <section
       id="event-detail"
-      className={e.isDemo ? 'detail is-demo' : 'detail'}
+      className="detail"
       aria-labelledby="event-detail-title"
       onKeyDown={(ev) => {
         if (ev.key === 'Escape') onClose();
@@ -66,7 +70,6 @@ export function EventDetail({ item, distanceSuffix, now, conflicts, sameSpot, op
     >
       <div className="detail-top">
         <span className={`tag cat-${e.category}`}>{categoryLabel(e.category)}</span>
-        {e.isDemo && <span className="badge badge-demo">Beispiel – keine echte Veranstaltung</span>}
         {e.status && <span className="badge badge-warn">{STATUS_LABEL[e.status]}</span>}
         <button type="button" className="icon-btn detail-close" aria-label="Details schließen" onClick={onClose}>
           <Icon name="close" />
@@ -108,7 +111,7 @@ export function EventDetail({ item, distanceSuffix, now, conflicts, sameSpot, op
                 <>
                   {formatDistance(item.distanceKm, e.locationApprox)} {distanceSuffix}
                   <span className="sub">
-                    Luftlinie{e.isDemo ? ', simuliert' : ''}
+                    Luftlinie
                     {distanceSuffix === 'entfernt' ? ', gemessen von deinem auf ca. 1 km gerundeten Standort' : ''}
                   </span>
                 </>
@@ -125,11 +128,9 @@ export function EventDetail({ item, distanceSuffix, now, conflicts, sameSpot, op
           <dd>
             {e.sourceName}
             <span className="sub">
-              {fresh.kind === 'demo'
-                ? 'Erfunden – wurde nie bei einer Quelle abgerufen.'
-                : fresh.kind === 'unknown'
-                  ? 'Abrufzeit unbekannt.'
-                  : `Zuletzt abgerufen: ${formatCheckedAt(fresh.at, now)}. Wann der Veranstalter den Eintrag zuletzt geändert hat, teilt die Quelle nicht mit.`}
+              {fresh.kind === 'unknown'
+                ? 'Abrufzeit unbekannt.'
+                : `Zuletzt abgerufen: ${formatCheckedAt(fresh.at, now)}. Wann der Veranstalter den Eintrag zuletzt geändert hat, teilt die Quelle nicht mit.`}
             </span>
           </dd>
         </div>
@@ -150,7 +151,7 @@ export function EventDetail({ item, distanceSuffix, now, conflicts, sameSpot, op
             <span className="visually-hidden"> (öffnet in neuem Fenster)</span>
           </a>
         ) : (
-          <p className="muted">{e.isDemo ? 'Keine Originalanzeige – erfundenes Beispiel.' : 'Die Quelle verlinkt keine Originalanzeige.'}</p>
+          <p className="muted">Die Quelle verlinkt keine Originalanzeige.</p>
         )}
         {links && (
           <a className="btn" href={links.primary.href} target="_blank" rel="noopener noreferrer">
@@ -159,6 +160,12 @@ export function EventDetail({ item, distanceSuffix, now, conflicts, sameSpot, op
           </a>
         )}
       </div>
+      {target && (
+        <p className="detail-maplinks">
+          Der Link führt zu <strong>{target.host}</strong>
+          {target.insecure ? ' über eine unverschlüsselte Verbindung (http)' : ''}. Umkreis prüft nicht, ob diese Seite zum Veranstalter gehört.
+        </p>
+      )}
       {links && (
         <p className="detail-maplinks">
           Oder in{' '}
@@ -230,8 +237,7 @@ function StreetLevel({ event: e, openIn }: { event: EventItem; openIn: MapProvid
   };
 
   let body;
-  if (e.isDemo) body = <p className="muted">Für erfundene Beispielorte gibt es keine Straßenbilder.</p>;
-  else if (!e.location || e.locationApprox)
+  if (!e.location || e.locationApprox)
     body = <p className="muted">Nicht verfügbar: Ohne genaue Position von der Quelle lässt sich nicht prüfen, ob es hier Straßenbilder gibt.</p>;
   else if (state.kind === 'idle' || state.kind === 'loading')
     body = (

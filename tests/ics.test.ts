@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { expandOccurrences, parseIcs, unfold } from '../server/ics.ts';
-import { icsEventToItems, readTextCapped, validateFeed, type FeedConfig } from '../server/providers/ics.ts';
+import { icsEventToItems, plausibleGeo, readTextCapped, validateFeed, type FeedConfig } from '../server/providers/ics.ts';
 
 const cal = (...lines: string[]) => ['BEGIN:VCALENDAR', 'VERSION:2.0', ...lines, 'END:VCALENDAR'].join('\r\n');
 const vevent = (...lines: string[]) => ['BEGIN:VEVENT', ...lines, 'END:VEVENT'].join('\r\n');
@@ -174,7 +174,6 @@ describe('icsEventToItems', () => {
     expect(item).toMatchObject({
       source: 'ics:stadt',
       sourceName: 'Stadt Musterstadt',
-      isDemo: false,
       title: 'Weihnachtsmarkt',
       category: 'markt',
       venue: 'Marktplatz',
@@ -194,6 +193,25 @@ describe('icsEventToItems', () => {
     expect(item.locationApprox).toBeFalsy();
     expect(item.url).toBe('https://example.org/k');
   });
+
+  it('does not trust GEO positions far from the feed area or outside Germany', () => {
+    const at = (geo: string) => icsEventToItems(feed, parseIcs(cal(vevent('UID:g', 'SUMMARY:Fest', 'DTSTART:20261122T190000', `GEO:${geo}`)))[0], ...window)[0];
+    const far = at('53.55;9.99'); // Hamburg, ~400 km from Musterstadt
+    expect(far.location).toEqual({ lat: 49.87, lon: 8.65 });
+    expect(far).toMatchObject({ locationApprox: true, locationRejected: true });
+    const swapped = at('8.65;49.87'); // lat/lon swapped: Gulf of Guinea → outside Germany
+    expect(swapped).toMatchObject({ locationApprox: true, locationRejected: true });
+    const near = at('49.99;8.8');
+    expect(near.location).toEqual({ lat: 49.99, lon: 8.8 });
+    expect(near.locationRejected).toBeUndefined();
+    expect(plausibleGeo({ ...feed, area: { ...feed.area!, radiusKm: 500 } }, { lat: 53.55, lon: 9.99 })).toBeDefined();
+    const noArea: FeedConfig = { ...feed, area: undefined };
+    expect(plausibleGeo(noArea, { lat: 53.55, lon: 9.99 })).toBeDefined();
+    expect(plausibleGeo(noArea, { lat: 48.85, lon: 2.35 })).toBeUndefined(); // Paris
+    const abroad = icsEventToItems(noArea, parseIcs(cal(vevent('UID:p', 'SUMMARY:Fest', 'DTSTART:20261122T190000', 'GEO:48.85;2.35')))[0], ...window)[0];
+    expect(abroad.location).toBeUndefined();
+    expect(abroad.locationRejected).toBe(true);
+  });
 });
 
 describe('validateFeed', () => {
@@ -201,5 +219,12 @@ describe('validateFeed', () => {
     expect(validateFeed(feed)).toMatchObject({ id: 'stadt' });
     expect(typeof validateFeed({ ...feed, url: 'file:///etc/passwd' })).toBe('string');
     expect(typeof validateFeed({ name: 'x' })).toBe('string');
+  });
+
+  it('requires the feed area to lie in Germany and its radius to be sane', () => {
+    expect(typeof validateFeed({ ...feed, area: { label: 'Paris', lat: 48.85, lon: 2.35 } })).toBe('string');
+    expect(typeof validateFeed({ ...feed, area: { ...feed.area, radiusKm: 0 } })).toBe('string');
+    expect(typeof validateFeed({ ...feed, area: { ...feed.area, radiusKm: '50' } })).toBe('string');
+    expect(validateFeed({ ...feed, area: { ...feed.area, radiusKm: 120 } })).toMatchObject({ area: { radiusKm: 120 } });
   });
 });

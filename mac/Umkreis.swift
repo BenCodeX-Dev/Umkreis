@@ -130,18 +130,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
     }.resume()
   }
 
-  /// Copies the example feed list and a short note into the data folder – never overwrites anything.
+  /// Copies the example feed list into the data folder (never over an existing one) and keeps the note current.
+  /// The folder and `.env` (which holds the API key) are made readable for this user only.
   private func seedSupportFiles(from app: URL) {
+    try? files.setAttributes([.posixPermissions: 0o700], ofItemAtPath: supportDir.path)
+    let envFile = supportDir.appendingPathComponent(".env")
+    if files.fileExists(atPath: envFile.path) {
+      try? files.setAttributes([.posixPermissions: 0o600], ofItemAtPath: envFile.path)
+    }
     let example = supportDir.appendingPathComponent("feeds.example.json")
     if !files.fileExists(atPath: example.path) {
       try? files.copyItem(at: app.appendingPathComponent("config/feeds.example.json"), to: example)
     }
     let note = supportDir.appendingPathComponent("LIESMICH.txt")
-    if !files.fileExists(atPath: note.path) {
+    do {
       let text = """
         Umkreis – Einstellungen für echte Veranstaltungsdaten
 
-        Ohne Datenquelle zeigt Umkreis nur deutlich markierte, erfundene Beispiele.
+        Umkreis zeigt nur echte Veranstaltungen aus Quellen, die hier eingerichtet sind.
+        Ohne Quelle bleibt die Liste leer – es werden keine Einträge erfunden.
 
         Ticketmaster: Lege hier eine Datei „.env“ an mit der Zeile
           TICKETMASTER_API_KEY=dein-schlüssel
@@ -296,7 +303,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
   ) {
     if action.shouldPerformDownload { return decisionHandler(.download) }
     guard let url = action.request.url else { return decisionHandler(.cancel) }
-    if isOwn(url) || ["about", "blob", "data"].contains(url.scheme ?? "") { return decisionHandler(.allow) }
+    // Downloads (calendar files from blob: links) are handled above; no other blob:/data: page may load.
+    if isOwn(url) || url.scheme == "about" { return decisionHandler(.allow) }
     openExternally(url)
     decisionHandler(.cancel)
   }
@@ -416,12 +424,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
     }
   }
 
+  private func rounded(_ v: Double) -> Double { (v * 100).rounded() / 100 }
+
   private func answerLocation(lat: Double? = nil, lon: Double? = nil, error: Int = 0, _ message: String = "") {
     let ids = pendingLocation
     pendingLocation.removeAll()
     for id in ids {
       let js =
-        if let lat, let lon { "window.__umkreisLocation?.(\(id), true, \(lat), \(lon))" } else {
+        // Rounded to ~1 km here already, so the page never receives a finer position.
+        if let lat, let lon { "window.__umkreisLocation?.(\(id), true, \(rounded(lat)), \(rounded(lon)))" } else {
           "window.__umkreisLocation?.(\(id), false, \(error), \"\(message)\")"
         }
       webView.evaluateJavaScript(js)

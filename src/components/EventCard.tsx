@@ -47,7 +47,7 @@ export function EventCard({ item, dayKey, distanceSuffix, isSaved, onToggleSave,
   const address = e.address ?? e.area;
   const timeIsText = e.allDay || !e.timeKnown;
   const links = map && openIn ? [...map.links].sort((a, b) => Number(b.provider === openIn) - Number(a.provider === openIn)) : map?.links;
-  const cls = ['card', `cat-${e.category}`, item.matchesInterest && 'is-highlight', e.isDemo && 'is-demo', e.status === 'cancelled' && 'is-cancelled', selected && 'is-selected']
+  const cls = ['card', `cat-${e.category}`, item.matchesInterest && 'is-highlight', e.status === 'cancelled' && 'is-cancelled', selected && 'is-selected']
     .filter(Boolean)
     .join(' ');
 
@@ -64,7 +64,6 @@ export function EventCard({ item, dayKey, distanceSuffix, isSaved, onToggleSave,
       <div className="card-body">
         <div className="card-top">
           <span className="tag">{categoryLabel(e.category)}</span>
-          {e.isDemo && <span className="badge badge-demo">Beispiel – keine echte Veranstaltung</span>}
           {e.status && <span className="badge badge-warn">{STATUS_LABEL[e.status]}</span>}
           {conflict && <span className="badge badge-flag" title={conflict.join('; ')}>Quellen widersprechen sich</span>}
           {fresh.kind === 'checked' && fresh.stale && <span className="badge badge-flag">Älter als 24 Std.</span>}
@@ -106,7 +105,6 @@ export function EventCard({ item, dayKey, distanceSuffix, isSaved, onToggleSave,
               <span className={item.distanceKm === undefined ? 'muted' : undefined}>
                 {formatDistance(item.distanceKm, e.locationApprox)}
                 {item.distanceKm !== undefined && ` ${distanceSuffix}`}
-                {e.isDemo && item.distanceKm !== undefined && ' (simuliert)'}
               </span>
             </li>
           )}
@@ -146,7 +144,7 @@ export function EventCard({ item, dayKey, distanceSuffix, isSaved, onToggleSave,
               <span className="visually-hidden"> (öffnet in neuem Tab)</span>
             </a>
           ) : (
-            <span className="no-link">{e.isDemo ? 'Keine Originalanzeige (Beispiel)' : 'Keine Originalanzeige verfügbar'}</span>
+            <span className="no-link">Keine Originalanzeige verfügbar</span>
           )}
         </div>
         {map && (

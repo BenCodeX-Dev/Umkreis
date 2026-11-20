@@ -1,14 +1,16 @@
 import { createServer, type Server } from 'node:http';
+import type { IncomingMessage } from 'node:http';
 import type { AddressInfo } from 'node:net';
+import { Readable } from 'node:stream';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
-import { distanceKm } from '../shared/geo.ts';
 import type { EventItem } from '../shared/types.ts';
 import { createApiHandler, parseEventsRequest } from '../server/api.ts';
 import { createEventService, MAX_EVENTS } from '../server/events.ts';
-import { parseNominatim } from '../server/geocode.ts';
+import { createGeocoder, MAX_WAITING, parseNominatim } from '../server/geocode.ts';
 import { createStreetLevel, isPublicHttpsUrl, parsePanoramaxSearch } from '../server/streetlevel.ts';
-import { isPublicIp, publicOnlyFetch, publicOnlyLookup } from '../server/publicFetch.ts';
-import { createDemoProvider } from '../server/providers/demo.ts';
+import { isPublicIp, publicOnlyFetch, publicOnlyLookup, toFetchResponse } from '../server/publicFetch.ts';
+import { clientAddress, createRateLimiter } from '../server/rateLimit.ts';
+import { effectiveAllowedHosts, type ServerConfig } from '../server/config.ts';
 import { ProviderError, type EventProvider, type ProviderQuery } from '../server/providers/types.ts';
 
 const NOW = new Date('2026-11-20T10:00:00Z');
@@ -47,7 +49,7 @@ describe('parseEventsRequest', () => {
 });
 
 const item = (over: Partial<EventItem>): EventItem => ({
-  id: 'p:1', source: 'p', sourceName: 'P', isDemo: false, title: 'Konzert', start: '2026-11-20T18:00:00.000Z', timeKnown: true, category: 'konzert', ...over,
+  id: 'p:1', source: 'p', sourceName: 'P', title: 'Konzert', start: '2026-11-20T18:00:00.000Z', timeKnown: true, category: 'konzert', ...over,
 });
 const provider = (id: string, impl: (q: ProviderQuery) => Promise<{ events: EventItem[]; truncated?: boolean; checkedAt?: string }>): EventProvider => ({
   id, name: id.toUpperCase(), kind: 'ics', fetchEvents: impl,
@@ -115,19 +117,28 @@ describe('event aggregation', () => {
     expect(r.events).toHaveLength(MAX_EVENTS);
     expect(r.truncated).toBe(true);
   });
-});
 
-describe('demo provider', () => {
-  it('labels every sample clearly and never links to a fake listing', async () => {
-    const collect = createEventService([createDemoProvider(() => NOW)], 'demo');
-    const r = await collect(query);
-    expect(r.events.length).toBeGreaterThan(0);
-    for (const e of r.events) {
-      expect(e.isDemo).toBe(true);
-      expect(e.url).toBeUndefined();
-      expect(e.venue).toMatch(/\(Beispiel\)/);
-      expect(distanceKm(query.center!, e.location!)).toBeLessThanOrEqual(15);
-    }
+  it('asks a source once when identical queries arrive at the same time', async () => {
+    let calls = 0;
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    const collect = createEventService([provider('s', async () => { calls++; await gate; return { events: [item({ location: { lat: 49.87, lon: 8.65 } })] }; })], 'live');
+    const both = Promise.all([collect(query), collect(query)]);
+    release();
+    const [a, b] = await both;
+    expect(calls).toBe(1);
+    expect(a.events).toHaveLength(1);
+    expect(b.events).toHaveLength(1);
+    await collect(query); // now cached
+    expect(calls).toBe(1);
+  });
+
+  it('lets the next query retry after a failed one', async () => {
+    let calls = 0;
+    const collect = createEventService([provider('f', async () => { calls++; throw new ProviderError('weg'); })], 'live');
+    await collect(query);
+    await collect(query);
+    expect(calls).toBe(2);
   });
 });
 
@@ -144,14 +155,14 @@ describe('parseNominatim', () => {
   });
 });
 
-describe('API handler (demo config)', () => {
+describe('API handler (no source configured)', () => {
   let server: Server;
   let base = '';
   const fakeFetch = vi.fn(async () => new Response('[]', { headers: { 'Content-Type': 'application/json' } }));
 
   beforeAll(async () => {
     const handle = createApiHandler(
-      { feeds: [], demoMode: 'auto', geocoderUrl: 'https://nominatim.invalid/search', geocoderUserAgent: 'test', appUserAgent: 'test', warnings: [] },
+      { feeds: [], geocoderUrl: 'https://nominatim.invalid/search', geocoderUserAgent: 'test', appUserAgent: 'test', warnings: [] },
       fakeFetch as unknown as typeof fetch,
     );
     server = createServer((req, res) => {
@@ -167,22 +178,22 @@ describe('API handler (demo config)', () => {
   const post = (path: string, body: unknown, type = 'application/json') =>
     fetch(base + path, { method: 'POST', headers: { 'Content-Type': type }, body: JSON.stringify(body) });
 
-  it('reports demo mode', async () => {
+  it('reports that no source is set up', async () => {
     const res = await fetch(`${base}/api/status`);
-    expect(await res.json()).toEqual({ mode: 'demo', sources: [{ id: 'demo', name: 'Demo-Daten (erfunden)', kind: 'demo' }] });
+    expect(await res.json()).toEqual({ mode: 'unconfigured', sources: [] });
   });
 
-  it('returns only labelled demo events', async () => {
+  it('returns no events at all instead of invented ones', async () => {
     const now = new Date();
     const from = new Date(now.getTime() - 3_600_000).toISOString();
     const to = new Date(now.getTime() + 2 * 86_400_000).toISOString();
     const res = await post('/api/events', { scope: 'local', lat: 49.873, lon: 8.651, radiusKm: 15, from, to });
-    expect(res.status).toBe(200);
+    expect(res.status).toBe(503);
     expect(res.headers.get('cache-control')).toBe('no-store');
-    const body = (await res.json()) as { mode: string; events: EventItem[] };
-    expect(body.mode).toBe('demo');
-    expect(body.events.length).toBeGreaterThan(0);
-    expect(body.events.every((e: EventItem) => e.isDemo)).toBe(true);
+    expect(res.headers.get('cross-origin-resource-policy')).toBe('same-origin');
+    const body = (await res.json()) as { code: string; events?: EventItem[] };
+    expect(body.code).toBe('no_sources');
+    expect(body.events).toBeUndefined();
   });
 
   it('rejects wrong methods, content types and bad input', async () => {
@@ -317,5 +328,75 @@ describe('public-only fetch for third-party picture URLs', () => {
     expect(err?.code).toBe('ENOTPUBLIC');
     await expect(publicOnlyFetch('https://localhost/a.jpg')).rejects.toMatchObject({ code: 'ENOTPUBLIC' });
     await expect(publicOnlyFetch('http://example.org/a.jpg')).rejects.toThrow('Nur https');
+  });
+});
+
+describe('abuse limits', () => {
+  it('converts only statuses a fetch Response can carry, instead of throwing in a socket callback', async () => {
+    const fake = (statusCode: number) =>
+      Object.assign(Readable.from([Buffer.from('ok')]), { statusCode, headers: { 'content-type': 'image/jpeg' } }) as unknown as IncomingMessage;
+    expect(() => toFetchResponse(fake(999))).toThrow(RangeError);
+    expect(() => toFetchResponse(fake(101))).toThrow(RangeError);
+    const ok = toFetchResponse(fake(200));
+    expect(ok.headers.get('content-type')).toBe('image/jpeg');
+    expect(await ok.text()).toBe('ok');
+  });
+
+  it('rate-limits each client and all clients together', () => {
+    let t = 0;
+    const take = createRateLimiter({ capacity: 3, refillPerSec: 1 }, { capacity: 5, refillPerSec: 1 }, () => t);
+    expect([take('a'), take('a'), take('a')]).toEqual([0, 0, 0]);
+    expect(take('a')).toBeGreaterThan(0);
+    expect([take('b'), take('b')]).toEqual([0, 0]);
+    expect(take('c')).toBeGreaterThan(0); // shared bucket (5) used up
+    t += 2000;
+    expect(take('a')).toBe(0);
+  });
+
+  it('counts clients behind a trusted proxy by the address the proxy reports', () => {
+    expect(clientAddress('10.0.0.2', '203.0.113.9', false)).toBe('10.0.0.2');
+    expect(clientAddress('10.0.0.2', 'spoofed, 203.0.113.9', true)).toBe('203.0.113.9');
+    expect(clientAddress('10.0.0.2', ['a', 'b, 198.51.100.4'], true)).toBe('198.51.100.4');
+    expect(clientAddress('10.0.0.2', undefined, true)).toBe('10.0.0.2');
+    expect(clientAddress('10.0.0.2', 'x'.repeat(100), true)).toBe('10.0.0.2');
+    expect(clientAddress(undefined, undefined, false)).toBe('unbekannt');
+  });
+
+  it('answers 429 with Retry-After once a client exceeds its budget', async () => {
+    const handle = createApiHandler(
+      { feeds: [], geocoderUrl: 'https://nominatim.invalid/search', geocoderUserAgent: 'test', appUserAgent: 'test', warnings: [] },
+      (async () => new Response('[]')) as unknown as typeof fetch,
+      { client: { capacity: 2, refillPerSec: 0.01 }, shared: { capacity: 100, refillPerSec: 1 } },
+    );
+    const srv = createServer((req, res) => void handle(req, res));
+    await new Promise<void>((r) => srv.listen(0, '127.0.0.1', r));
+    const url = `http://127.0.0.1:${(srv.address() as AddressInfo).port}`;
+    const post = () => fetch(`${url}/api/geocode`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{"q":"Darmstadt"}' });
+    try {
+      expect((await post()).status).toBe(200);
+      expect((await post()).status).toBe(200);
+      const limited = await post();
+      expect(limited.status).toBe(429);
+      expect(Number(limited.headers.get('retry-after'))).toBeGreaterThan(0);
+      expect((await fetch(`${url}/api/status`)).status).toBe(200); // status never calls a third party
+    } finally {
+      await new Promise<void>((r) => srv.close(() => r()));
+    }
+  });
+
+  it('does not queue unlimited place searches behind the 1-per-second Nominatim limit', async () => {
+    const never = vi.fn(() => new Promise<Response>(() => {}));
+    const geocode = createGeocoder('https://nominatim.invalid/search', 'test', never as unknown as typeof fetch);
+    for (let i = 0; i < MAX_WAITING; i++) void geocode(`Ort ${i}`);
+    const overflow = await geocode('Darmstadt');
+    expect(overflow.fallback).toBe(true);
+    expect(never.mock.calls.length).toBeLessThanOrEqual(1);
+  });
+
+  it('lets a loopback server answer only to its own host names by default', () => {
+    const cfg = { allowedHosts: undefined } as ServerConfig;
+    expect(effectiveAllowedHosts(cfg, '127.0.0.1', 8787)).toEqual(['127.0.0.1:8787', 'localhost:8787', '[::1]:8787']);
+    expect(effectiveAllowedHosts(cfg, '0.0.0.0', 8787)).toBeUndefined();
+    expect(effectiveAllowedHosts({ allowedHosts: ['events.example.org'] } as ServerConfig, '0.0.0.0', 80)).toEqual(['events.example.org']);
   });
 });

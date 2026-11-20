@@ -14,13 +14,12 @@ const fix = (n: number) => String(Math.round(n * 1e5) / 1e5);
 
 /**
  * Deep links that open the event's place in a map app. Only the destination goes into the URL –
- * never the user's home. Demo events get none: their places are invented. Formats:
+ * never the user's home. Formats:
  * Apple https://developer.apple.com/documentation/mapkit/unified-map-urls,
  * Google https://developers.google.com/maps/documentation/urls/get-started,
  * HERE https://docs.here.com/wego-pro/docs/share-location-dl.
  */
 export function mapTarget(e: EventItem): MapTarget | null {
-  if (e.isDemo) return null;
   const place = e.address?.trim() || e.area?.trim();
 
   if (e.location && !e.locationApprox) {

@@ -1,4 +1,5 @@
 import { lookup as dnsLookup, type LookupAddress, type LookupOptions } from 'node:dns';
+import type { IncomingMessage } from 'node:http';
 import https from 'node:https';
 import { BlockList, isIP } from 'node:net';
 import { Readable } from 'node:stream';
@@ -65,7 +66,23 @@ export function publicOnlyLookup(hostname: string, options: LookupOptions, callb
   });
 }
 
-const NO_BODY = new Set([101, 204, 205, 304]);
+const NO_BODY = new Set([204, 205, 304]);
+
+/**
+ * Wraps a Node response as a fetch `Response`. The peer controls the status line and headers, so this
+ * throws on anything `Response` cannot represent (e.g. status 999) – callers must catch.
+ */
+export function toFetchResponse(res: IncomingMessage): Response {
+  const status = res.statusCode ?? 0;
+  if (!Number.isInteger(status) || status < 200 || status > 599) throw new RangeError(`Ungültiger HTTP-Status ${status}.`);
+  const out = new Headers();
+  for (const [k, v] of Object.entries(res.headers)) {
+    if (v !== undefined) out.set(k, Array.isArray(v) ? v.join(', ') : v);
+  }
+  const body = NO_BODY.has(status) ? null : (Readable.toWeb(res) as ReadableStream<Uint8Array>);
+  if (!body) res.resume();
+  return new Response(body, { status, headers: out });
+}
 
 /**
  * GET over https to public addresses only, with the `fetch` call shape used elsewhere. Redirects are
@@ -82,14 +99,13 @@ export const publicOnlyFetch: FetchFn = (input, init) =>
     if (url.protocol !== 'https:') return reject(new TypeError('Nur https-Adressen sind erlaubt.'));
     const headers = Object.fromEntries(new Headers(init?.headers).entries());
     const req = https.request(url, { method: 'GET', headers, lookup: publicOnlyLookup, signal: init?.signal ?? undefined }, (res) => {
-      const status = res.statusCode ?? 502;
-      const out = new Headers();
-      for (const [k, v] of Object.entries(res.headers)) {
-        if (v !== undefined) out.set(k, Array.isArray(v) ? v.join(', ') : v);
+      // Runs in a socket callback: anything thrown here would be uncaught and stop the server.
+      try {
+        resolve(toFetchResponse(res));
+      } catch (err) {
+        res.destroy();
+        reject(err);
       }
-      const body = NO_BODY.has(status) ? null : (Readable.toWeb(res) as ReadableStream<Uint8Array>);
-      if (!body) res.resume();
-      resolve(new Response(body, { status, headers: out }));
     });
     req.on('error', reject);
     req.end();

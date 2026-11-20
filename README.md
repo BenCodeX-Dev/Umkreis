@@ -22,7 +22,7 @@ Umkreis zeigt, was die Quellen melden – nicht mehr. Es gibt keine Garantie auf
 - **Unvollständig** – fehlen Uhrzeit, Ort, Kartenposition oder Originalanzeige, nennt die Detailansicht genau das.
 - **Widersprüchlich** – meldet eine zweite Quelle dieselbe Veranstaltung (gleicher Titel, gleicher Tag) mit anderer Uhrzeit, anderem Ort oder als abgesagt, wird das an beiden Einträgen angezeigt. Verglichen wird nur innerhalb der aktuellen Ergebnisse.
 - **Ungefähre Lage** – Termine ohne eigene Koordinaten stehen an der Ortsmitte ihres Feeds (gestrichelte Nadel, Entfernung „zur Ortsmitte“).
-- **Beispieldaten** – ohne eingerichtete Quelle zeigt Umkreis erfundene Einträge mit Banner, „Beispiel“-Marke, schraffierten Nadeln, ohne Links und mit simulierten Entfernungen.
+- **Keine Quelle, keine Einträge** – ohne eingerichtete Quelle bleibt die Liste leer, und ein Hinweis erklärt, wie man eine Quelle einrichtet. Umkreis erfindet nichts.
 - Fehlende Preise, Zeiten oder Entfernungen heißen „unbekannt“ und werden nie geschätzt.
 
 ## Darstellung
@@ -44,8 +44,8 @@ Kartenanzeige in der App und „Öffnen in …“ sind zwei getrennte Einstellun
 | **HERE WeGo** | – | ✓ (nur bei genauer Position) | – | – |
 
 - **Karte erst nach Zustimmung.** Beim ersten Mal fragt Umkreis, ob Kacheln von den OSM-Servern geladen werden dürfen (die sehen IP-Adresse und Kartenausschnitt). „Keine Karte“ ist jederzeit wählbar.
-- **Öffnen in …** übergibt eine genaue Position (5 Nachkommastellen) oder – bei ungefährer Lage – eine Suche nach Ort und Adresse, mit Hinweis, den Treffer zu prüfen. Nie den eigenen Standort. Beispiel-Veranstaltungen haben keine Kartenlinks.
-- **Straßenbilder** kommen von [Panoramax](https://panoramax.fr) (offene, OSM-nahe Bildersammlung, Lizenz je Bild, meist CC BY-SA 4.0). Erst auf Klick sucht der eigene Server im Umkreis von 50 m um den Veranstaltungsort; gibt es nichts, steht dort ausdrücklich „Nicht verfügbar: Panoramax hat im Umkreis von 50 m … keine Straßenbilder“. Vorschaubilder laufen über den eigenen Server, das volle Bild öffnet bei Panoramax. Nur innerhalb Deutschlands, nicht für ungefähre oder erfundene Orte.
+- **Öffnen in …** übergibt eine genaue Position (5 Nachkommastellen) oder – bei ungefährer Lage – eine Suche nach Ort und Adresse, mit Hinweis, den Treffer zu prüfen. Nie den eigenen Standort.
+- **Straßenbilder** kommen von [Panoramax](https://panoramax.fr) (offene, OSM-nahe Bildersammlung, Lizenz je Bild, meist CC BY-SA 4.0). Erst auf Klick sucht der eigene Server im Umkreis von 50 m um den Veranstaltungsort; gibt es nichts, steht dort ausdrücklich „Nicht verfügbar: Panoramax hat im Umkreis von 50 m … keine Straßenbilder“. Vorschaubilder laufen über den eigenen Server, das volle Bild öffnet bei Panoramax. Nur innerhalb Deutschlands, nicht für ungefähre Orte.
 
 URL-Formate laut Herstellerdokumentation: [Apple](https://developer.apple.com/documentation/mapkit/unified-map-urls), [Google](https://developers.google.com/maps/documentation/urls/get-started), [HERE](https://docs.here.com/wego-pro/docs/share-location-dl).
 
@@ -85,7 +85,7 @@ Voraussetzung: Node ≥ 22.18 (läuft TypeScript direkt aus).
 
 ```bash
 npm install
-cp .env.example .env      # optional – ohne Quelle startet der Demo-Modus
+cp .env.example .env      # Ticketmaster-Schlüssel eintragen – ohne Quelle bleibt die Liste leer
 npm run dev               # http://localhost:5173 (UI + /api im selben Prozess)
 ```
 
@@ -104,7 +104,6 @@ Prüfen: `npm run check` (Typecheck, Lint, Tests, Build).
 |---|---|---|
 | **Ticketmaster Discovery API** | Konzerte, Partys, Sport, Kultur mit Ticketverkauf | Kostenlosen Schlüssel holen auf developer.ticketmaster.com, in `.env` als `TICKETMASTER_API_KEY` |
 | **iCal/ICS-Feeds** | Wochenmärkte, Vereins-, Stadt- und Gemeindekalender | `config/feeds.example.json` nach `config/feeds.json` kopieren und öffentliche `.ics`-Adressen eintragen |
-| **Demo** | nichts Echtes | Nur aktiv, wenn keine Quelle eingerichtet ist (`DEMO_MODE=auto`). Einträge sind als „Beispiel“ markiert, haben keinen Link und simulierte Entfernungen. |
 
 Feed-Eintrag (`config/feeds.json`):
 
@@ -116,9 +115,10 @@ Feed-Eintrag (`config/feeds.json`):
 
 - `category` (optional): Standard, wenn ein Termin keine erkennbare Kategorie hat – `konzert`, `party`, `markt`, `festival`, `community`, `kultur`, `sport`, `familie`, `sonstiges`.
 - `area` (optional, empfohlen): Ortsmitte für Termine ohne `GEO`-Angabe. Solche Entfernungen werden als „(Ortsmitte)“ gekennzeichnet. Feeds ohne `area` und ohne `GEO` erscheinen nur deutschlandweit, nicht in der Umkreissuche.
+- `area.radiusKm` (optional, 1–500, Standard 50): Wie weit Termine des Kalenders von der Ortsmitte entfernt liegen dürfen. Eine `GEO`-Angabe weiter weg – oder außerhalb Deutschlands – gilt als unplausibel (Tippfehler, vertauschte Werte, falsche Angaben) und wird nicht verwendet; der Termin bekommt dann die Ortsmitte als ungefähre Lage, und die Detailansicht sagt, warum. Für landesweite Kalender `radiusKm` entsprechend erhöhen.
 - Nur Feeds verwenden, deren Nutzung erlaubt ist (öffentlich angebotene Kalender-Abos). Kein Scraping.
 
-Weitere Variablen: siehe [.env.example](.env.example) (`DEMO_MODE`, `GEOCODER_URL`, `GEOCODER_USER_AGENT`, `PORT`, `HOST`). Für den öffentlichen Nominatim-Dienst muss `GEOCODER_USER_AGENT` die eigene Installation mit Kontakt angeben.
+Weitere Variablen: siehe [.env.example](.env.example) (`GEOCODER_URL`, `GEOCODER_USER_AGENT`, `PORT`, `HOST`, `ALLOWED_HOSTS`, `TRUST_PROXY`). Wer `HOST` auf `0.0.0.0` oder eine öffentliche Adresse setzt, muss `ALLOWED_HOSTS` mit dem eigenen Hostnamen setzen – sonst warnt der Server beim Start und beantwortet jeden Hostnamen. Für den öffentlichen Nominatim-Dienst muss `GEOCODER_USER_AGENT` die eigene Installation mit Kontakt angeben.
 
 ## Datenschutz
 
@@ -130,6 +130,20 @@ Weitere Variablen: siehe [.env.example](.env.example) (`DEMO_MODE`, `GEOCODER_UR
 - Kartenlinks sind normale Links: Erst beim Anklicken erfährt der gewählte Kartendienst den Veranstaltungsort (und, wie bei jedem Seitenaufruf, die IP-Adresse). Es gilt dann dessen Datenschutzerklärung.
 - Die gewählte Darstellung, Kartenanzeige und „Öffnen in …“ liegen im `localStorage` (in der Mac-App im Speicher der App).
 
+## Sicherheit
+
+Was eingebaut ist – keine Zertifizierung, keine Garantie; Funde bitte melden.
+
+- **Daten aus Quellen gelten als nicht vertrauenswürdig.** Titel und Texte werden als reiner Text dargestellt (HTML wird entfernt), Links nur mit `http`/`https` übernommen. Unter jeder Originalanzeige steht, zu welcher Domain der Link führt (bei `http` mit Hinweis auf die unverschlüsselte Verbindung) – Umkreis prüft nicht, ob die Seite wirklich zum Veranstalter gehört. Internationalisierte Domains erscheinen in der `xn--`-Form, damit Doppelgänger-Domains auffallen.
+- **Abrufe von Bildadressen aus Fremddaten** (Panoramax-Vorschaubilder) gehen nur per `https` an öffentliche IP-Adressen; Adressen im eigenen Netz (127.0.0.1, 192.168.x.x usw.) werden auch dann abgelehnt, wenn ein öffentlicher Name dorthin zeigt.
+- **Missbrauchsschutz der API:** Pro Client 60 Anfragen auf einmal, danach 1 pro Sekunde, für alle zusammen 300 bzw. 5 pro Sekunde; darüber antwortet der Server mit `429` und `Retry-After`. Höchstens 5 Ortssuchen warten gleichzeitig auf Nominatim, weitere bekommen sofort die Städte-Schnellauswahl. Gleiche Anfragen, die gleichzeitig eintreffen, teilen sich einen Abruf bei der Quelle. Hinter einem eigenen Reverse-Proxy `TRUST_PROXY=1` setzen, damit jeder Client nach der vom Proxy gemeldeten Adresse (letzter `X-Forwarded-For`-Eintrag) zählt – nur, wenn der Server ausschließlich über diesen Proxy erreichbar ist; sonst teilen sich alle Clients ein Kontingent.
+- **Host-Prüfung** gegen DNS-Rebinding (`ALLOWED_HOSTS`, auf 127.0.0.1/localhost automatisch), strikte CSP, `Cross-Origin-Resource-Policy`/`-Opener-Policy: same-origin`, `nosniff`, `frame-ancestors 'none'`.
+- **Ortsangaben der Quellen** werden auf Plausibilität geprüft: `GEO` aus iCal-Feeds nur innerhalb Deutschlands und im Umkreis des Kalendergebiets (`area.radiusKm`). Ob eine plausible Position stimmt, kann Umkreis nicht prüfen.
+- **Standort** gilt als nicht vertrauenswürdige, grobe Angabe: Er wird überall auf ≈ 1 km gerundet (auch in der Mac-App, bevor er die Seite erreicht) und nur für die Umkreissuche benutzt. Ein vorgetäuschter Gerätestandort lässt sich nicht erkennen; er verändert nur die eigene Suche.
+- **Verschlüsselung:** Abrufe bei Ticketmaster, Nominatim, Panoramax und die Kartenkacheln laufen über HTTPS; iCal-Feeds so verschlüsselt, wie ihre Adresse es vorgibt (`https` verwenden, wo angeboten). Die Mac-App spricht mit ihrem Server nur über 127.0.0.1 – diese Verbindung verlässt den Rechner nicht. Der Node-Server selbst spricht nur HTTP: Wer Umkreis öffentlich betreibt, braucht TLS (und HSTS) am Host oder Reverse-Proxy. Der Server speichert nichts dauerhaft, nur kurzlebige Zwischenspeicher im Arbeitsspeicher. Gemerktes und Einstellungen liegen unverschlüsselt im Browser-Speicher des Geräts – geschützt durch die Geräteverschlüsselung (z. B. FileVault), nicht durch Umkreis.
+- **Schlüssel** stehen nur in `.env` (nie im Repository; `.gitignore`). Die Mac-App macht ihren Datenordner und die `.env` darin bei jedem Start nur für den eigenen Benutzer lesbar.
+- **Mac-App:** Das Fenster lädt nur die eigene Adresse; alle anderen Links öffnen im Standardbrowser, Downloads außer Kalenderdateien werden nur im Finder gezeigt, nicht geöffnet.
+
 ## Einschränkungen
 
 - **Abdeckung hängt von den Quellen ab.** Ticketmaster listet vor allem Ticket-Veranstaltungen; Märkte, Flohmärkte und Vereinsfeste erscheinen nur, wenn passende iCal-Feeds eingetragen sind. Eine bundesweite offene Quelle dafür ist nicht eingebunden.
@@ -139,7 +153,6 @@ Weitere Variablen: siehe [.env.example](.env.example) (`DEMO_MODE`, `GEOCODER_UR
 - Ortssuche über Nominatim: nur auf Absenden, max. 1 Anfrage/s; bei Ausfall bleibt die Städte-Schnellauswahl.
 - Ohne Server (rein statisch gehostet) funktioniert nur die Oberfläche, nicht die Datenabfrage.
 - Kartenlinks: Die einheitlichen Apple-Karten-Links sind laut Apple für iOS 18.4 / macOS 15.4 und neuer dokumentiert; ältere Geräte öffnen sie im Browser (nicht auf allen Systemen geprüft). Die Adresssuche kann bei mehrdeutigen Namen einen falschen Ort treffen. Das OpenStreetMap-Suchformat ist nicht offiziell dokumentiert.
-- Im Demo-Modus gibt es bewusst keine Kartenlinks und keine Straßenbilder – die Orte sind erfunden.
 - Widersprüche werden nur zwischen Einträgen der aktuellen Ergebnisse erkannt, und nur bei gleichem Titel am gleichen Tag.
 - Panoramax deckt Deutschland lückenhaft ab; meist gibt es keine Bilder. Abgefragt wird die öffentliche Instanz api.panoramax.xyz ohne Schlüssel; fällt sie aus, zeigt die Detailansicht einen Fehlerhinweis.
 - Mac-App: nicht notarisiert, braucht ein installiertes Node.js, nur auf Apple Silicon unter macOS 27 getestet. Die Standortabfrage über die Ortungsdienste ist nicht durchgetestet (siehe CHANGELOG).

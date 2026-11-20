@@ -45,7 +45,7 @@ export function rankEvents(events: EventItem[], o: FilterOptions): RankedEvent[]
       if (matchesInterest) {
         reasons.push(`passt zu deinem Interesse „${categoryLabel(e.category)}“`);
         if (km !== undefined && km < 2 && !e.locationApprox) {
-          reasons.push(e.isDemo ? 'ganz in der Nähe (unter 2 km, simuliert)' : 'ganz in der Nähe (unter 2 km)');
+          reasons.push('ganz in der Nähe (unter 2 km)');
         }
         if (e.price?.free) reasons.push('kostenlos');
       }

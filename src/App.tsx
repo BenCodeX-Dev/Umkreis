@@ -8,7 +8,7 @@ import { LocationDialog } from './components/LocationDialog.tsx';
 import { Onboarding } from './components/Onboarding.tsx';
 import { SavedView } from './components/SavedView.tsx';
 import { useHashRoute, useNotice, useNow, usePersistentState, useTheme, type Route } from './hooks/hooks.ts';
-import { fetchStatus, sanitizeEvent, type ServerStatus } from './lib/api.ts';
+import { fetchStatus, sanitizeEvent, sanitizeSaved, type ServerStatus } from './lib/api.ts';
 import { formatShortDate, formatTime, isOver } from './lib/dates.ts';
 import { isHomeLocation, type HomeLocation } from './lib/location.ts';
 import { defaultOpenIn, isInAppMapPref, isMapProvider, MAP_VIEW_KEY, OPEN_IN_KEY, OPEN_IN_OPTIONS, type InAppMap } from './lib/mapPrefs.ts';
@@ -53,7 +53,7 @@ export function App() {
   const [rememberHome, setRememberHome] = useState(() => loadHome() !== undefined);
   const [radius, setRadius] = usePersistentState('umkreis.radius', 15, isRadius);
   const [interests, setInterests] = usePersistentState<CategoryId[]>('umkreis.interests', [], isCategoryList);
-  const [saved, setSaved] = usePersistentState<Record<string, EventItem>>('umkreis.saved', {}, isSavedMap);
+  const [saved, setSaved] = usePersistentState<Record<string, EventItem>>('umkreis.saved', {}, isSavedMap, sanitizeSaved);
   const [dialog, setDialog] = useState<'location' | 'interests' | null>(null);
   const [status, setStatus] = useState<ServerStatus | null>(null);
   const [notice, notify] = useNotice();
@@ -112,7 +112,7 @@ export function App() {
         let next: Record<string, EventItem> | null = null;
         for (const e of events) {
           const old = s[e.id];
-          if (old && !e.isDemo && e.checkedAt && e.checkedAt !== old.checkedAt) (next ??= { ...s })[e.id] = e;
+          if (old && e.checkedAt && e.checkedAt !== old.checkedAt) (next ??= { ...s })[e.id] = e;
         }
         return next ?? s;
       }),
@@ -121,7 +121,7 @@ export function App() {
   const removePast = () => setSaved((s) => Object.fromEntries(Object.entries(s).filter(([, e]) => !isOver(e, now))));
 
   const onShare = async (e: EventItem) => {
-    const text = `${e.isDemo ? '[Beispiel – keine echte Veranstaltung] ' : ''}${e.title} – ${formatShortDate(e.start)}, ${formatTime(e)}${e.venue ? `, ${e.venue}` : ''}`;
+    const text = `${e.title} – ${formatShortDate(e.start)}, ${formatTime(e)}${e.venue ? `, ${e.venue}` : ''}`;
     try {
       if (typeof navigator.share === 'function') {
         await navigator.share(e.url ? { title: e.title, text, url: e.url } : { title: e.title, text });
@@ -197,11 +197,14 @@ export function App() {
         </nav>
       </header>
 
-      {status?.mode === 'demo' && (
-        <div className="demo-banner" role="note">
+      {status?.mode === 'unconfigured' && (
+        <div className="setup-banner" role="note">
           <div className="container">
-            <strong>Demo-Modus:</strong> Es ist keine Datenquelle eingerichtet. Alle Einträge sind erfundene Beispiele mit
-            simulierten Orten und Entfernungen – keine echten Veranstaltungen.
+            <strong>Noch keine Datenquelle eingerichtet.</strong> Umkreis zeigt nur echte Veranstaltungen aus Quellen, die du
+            einrichtest: einen kostenlosen Ticketmaster-Schlüssel (Zeile <code>TICKETMASTER_API_KEY=…</code> in der Datei{' '}
+            <code>.env</code>) oder iCal-Kalender von Stadt und Vereinen (<code>feeds.json</code>). In der Mac-App liegen beide
+            Dateien im Datenordner (Menü „Umkreis“ → „Datenordner im Finder zeigen“, Anleitung in <code>LIESMICH.txt</code>);
+            danach Umkreis neu starten.
           </div>
         </div>
       )}

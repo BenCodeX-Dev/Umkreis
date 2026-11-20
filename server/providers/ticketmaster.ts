@@ -81,7 +81,6 @@ export function normalizeTicketmasterEvent(raw: unknown): EventItem | null {
     id: `tm:${id}`,
     source: 'ticketmaster',
     sourceName: 'Ticketmaster',
-    isDemo: false,
     title,
     start: start.iso,
     end: endIso && !Number.isNaN(Date.parse(endIso)) ? new Date(endIso).toISOString() : undefined,

@@ -55,7 +55,6 @@
   --warn-ink: #5f4508;
   --error-bg: #f8e1da;
   --error-ink: #8c2a18;
-  --demo-stripe: rgb(224 165 43 / 12%);
   --focus: #7a2c1f;
 
   /* Categories – each ≥ 5.6:1 on surface and recessed */
@@ -119,7 +118,6 @@
     --warn-ink: #f2d796;
     --error-bg: #462820;
     --error-ink: #f4b8a8;
-    --demo-stripe: rgb(233 180 76 / 8%);
     --focus: #f5cf7e;
     --c-konzert: #d8a9cd;
     --c-party: #f0a0b2;
@@ -170,7 +168,6 @@
   --warn-ink: #f2d796;
   --error-bg: #462820;
   --error-ink: #f4b8a8;
-  --demo-stripe: rgb(233 180 76 / 8%);
   --focus: #f5cf7e;
   --c-konzert: #d8a9cd;
   --c-party: #f0a0b2;
@@ -300,10 +297,11 @@ strong { font-weight: 620; }
 }
 .tab[aria-current='page'] .count { border-color: var(--accent); color: var(--link); }
 
-.demo-banner {
+.setup-banner {
   background: var(--warn-bg); color: var(--warn-ink); padding: 11px 0; font-size: .94rem;
   border-bottom: 1px solid var(--line-strong);
 }
+.setup-banner code { font-size: .88em; overflow-wrap: anywhere; }
 
 /* ---------- Page layout ---------- */
 
@@ -582,7 +580,6 @@ select {
 .tag { display: inline-flex; align-items: center; gap: 7px; font-size: .85rem; font-weight: 620; color: var(--cat); }
 .tag::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: currentColor; flex: none; }
 .badge { font-size: .78rem; font-weight: 600; padding: 2px 8px; border-radius: var(--r-sm); line-height: 1.5; }
-.badge-demo { background: var(--warn-bg); color: var(--warn-ink); border: 1px solid color-mix(in srgb, currentColor 35%, transparent); }
 .badge-warn { background: var(--error-bg); color: var(--error-ink); }
 .card-title { font-size: 1.38rem; font-weight: 560; line-height: 1.2; overflow-wrap: anywhere; text-wrap: balance; }
 
@@ -616,7 +613,6 @@ select {
 
 .card.is-highlight { border-color: color-mix(in srgb, var(--gold) 65%, var(--line)); }
 .card.is-highlight .card-when { background: var(--gold-wash); box-shadow: inset 3px 0 0 var(--gold); border-radius: var(--r) 0 0 var(--r); }
-.card.is-demo { background-image: repeating-linear-gradient(135deg, transparent 0 14px, var(--demo-stripe) 14px 15px); }
 .card.is-cancelled .card-title, .card.is-cancelled .when-time { text-decoration: line-through; color: var(--muted); }
 
 .cat-konzert { --cat: var(--c-konzert); }
@@ -786,7 +782,6 @@ select {
 .map-pin span { font: 700 .72rem/1 var(--sans); color: var(--ink); }
 .map-pin.is-approx { border-style: dashed; background: color-mix(in srgb, var(--surface) 70%, transparent); }
 .map-pin.is-approx::after { background: transparent; border: 1.5px solid var(--cat); }
-.map-pin.is-demo { background-image: repeating-linear-gradient(135deg, transparent 0 3px, color-mix(in srgb, var(--cat) 35%, transparent) 3px 4.5px); }
 .map-pin.is-selected { border-color: var(--accent); box-shadow: 0 0 0 3px var(--gold), 0 2px 6px rgb(0 0 0 / 40%); }
 .map-pin.is-selected::after { width: 12px; height: 12px; background: var(--accent); }
 .map-pin.is-cancelled { opacity: .55; }
@@ -811,7 +806,6 @@ select {
   background: var(--surface); border: 1px solid var(--line); border-top: 3px solid var(--wood);
   border-radius: var(--r); box-shadow: 0 1px 2px var(--edge), 0 10px 28px var(--shadow);
 }
-.detail.is-demo { background-image: repeating-linear-gradient(135deg, transparent 0 14px, var(--demo-stripe) 14px 15px); }
 .detail-top { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; }
 .detail-close { margin-left: auto; }
 .detail-title { font-family: var(--serif); font-size: 1.5rem; font-weight: 560; line-height: 1.2; overflow-wrap: anywhere; text-wrap: balance; }

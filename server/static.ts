@@ -15,6 +15,8 @@ const TYPES: Record<string, string> = {
 
 const SECURITY_HEADERS = {
   'X-Content-Type-Options': 'nosniff',
+  'Cross-Origin-Resource-Policy': 'same-origin',
+  'Cross-Origin-Opener-Policy': 'same-origin',
   'Referrer-Policy': 'strict-origin-when-cross-origin',
   'Permissions-Policy': 'geolocation=(self), camera=(), microphone=()',
   'Content-Security-Policy':

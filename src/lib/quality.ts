@@ -7,12 +7,10 @@ import { formatTime } from './dates.ts';
 export const STALE_AFTER_MS = 24 * 3_600_000;
 
 export type Freshness =
-  | { kind: 'demo' }
   | { kind: 'unknown' }
   | { kind: 'checked'; at: Date; stale: boolean };
 
 export function freshness(e: EventItem, now: Date): Freshness {
-  if (e.isDemo) return { kind: 'demo' };
   const t = e.checkedAt ? Date.parse(e.checkedAt) : NaN;
   if (Number.isNaN(t)) return { kind: 'unknown' };
   return { kind: 'checked', at: new Date(t), stale: now.getTime() - t > STALE_AFTER_MS };
@@ -34,14 +32,28 @@ export function formatCheckedAt(at: Date, now: Date): string {
 
 /** Details the source did not provide. Price is left out: "Preis unbekannt" is already shown everywhere. */
 export function missingDetails(e: EventItem): string[] {
-  if (e.isDemo) return [];
   const out: string[] = [];
   if (!e.timeKnown && !e.allDay) out.push('Uhrzeit');
   if (!e.venue && !e.address && !e.area) out.push('Ort');
-  if (!e.location) out.push('Kartenposition');
-  else if (e.locationApprox) out.push('genaue Kartenposition');
+  // A rejected position was given but is not used – the position note says so; it is not "missing".
+  if (!e.location && !e.locationRejected) out.push('Kartenposition');
+  else if (e.locationApprox && !e.locationRejected) out.push('genaue Kartenposition');
   if (!e.url) out.push('Originalanzeige');
   return out;
+}
+
+/**
+ * Where an outbound link leads, shown before it is opened so a listing pointing somewhere unexpected
+ * stands out. International names stay in their xn-- form, which makes look-alike letters visible.
+ */
+export function linkTarget(url: string): { host: string; insecure: boolean } | null {
+  try {
+    const u = new URL(url);
+    if (u.protocol !== 'https:' && u.protocol !== 'http:') return null;
+    return { host: u.hostname.replace(/^www\./, ''), insecure: u.protocol === 'http:' };
+  } catch {
+    return null;
+  }
 }
 
 const key = (s: string) => normalizeForSearch(s).replace(/\W+/g, '');
@@ -54,7 +66,6 @@ const key = (s: string) => normalizeForSearch(s).replace(/\W+/g, '');
 export function findConflicts(events: EventItem[]): Map<string, string[]> {
   const groups = new Map<string, EventItem[]>();
   for (const e of events) {
-    if (e.isDemo) continue;
     const k = `${key(e.title)}|${localDayKey(new Date(e.start))}`;
     groups.set(k, [...(groups.get(k) ?? []), e]);
   }

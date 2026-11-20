@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { EventItem } from '../shared/types.ts';
-import { sanitizeEvent } from '../src/lib/api.ts';
+import { sanitizeEvent, sanitizeSaved } from '../src/lib/api.ts';
 import { buildIcs } from '../src/lib/calendar.ts';
 import { formatDayHeading, isOver, rangeWindow } from '../src/lib/dates.ts';
 import { groupByDay, rankEvents } from '../src/lib/filter.ts';
@@ -8,14 +8,13 @@ import { formatDistance, formatPrice } from '../src/lib/format.ts';
 import { mapTarget, preferLink } from '../src/lib/maps.ts';
 import { defaultOpenIn } from '../src/lib/mapPrefs.ts';
 import { groupSpots } from '../src/lib/spots.ts';
-import { findConflicts, formatCheckedAt, freshness, missingDetails } from '../src/lib/quality.ts';
+import { findConflicts, formatCheckedAt, freshness, linkTarget, missingDetails } from '../src/lib/quality.ts';
 import { applyThemePref, isThemePref, loadThemePref, resolveTheme } from '../src/lib/theme.ts';
 
 const ev = (over: Partial<EventItem> = {}): EventItem => ({
   id: 'x1',
   source: 'test',
   sourceName: 'Test',
-  isDemo: false,
   title: 'Konzert',
   start: '2026-11-21T19:00:00.000Z',
   timeKnown: true,
@@ -68,9 +67,7 @@ describe('rankEvents / groupByDay', () => {
     expect(ranked[2].distanceKm).toBeUndefined();
   });
 
-  it('marks proximity of demo events as simulated', () => {
-    const demo = ev({ ...events[0], id: 'd', isDemo: true });
-    expect(rankEvents([demo], base)[0].reasons).toContain('ganz in der Nähe (unter 2 km, simuliert)');
+  it('notes when a matching event is very close', () => {
     expect(rankEvents([events[0]], base)[0].reasons).toContain('ganz in der Nähe (unter 2 km)');
   });
 
@@ -123,6 +120,20 @@ describe('sanitizeEvent', () => {
     expect(sanitizeEvent({ id: 'x' })).toBeNull();
     expect(sanitizeEvent({ ...ev(), category: 'unbekannt' })).toBeNull();
     expect(sanitizeEvent({ ...ev(), url: 'javascript:alert(1)' })?.url).toBeUndefined();
+    expect(sanitizeEvent({ ...ev(), locationRejected: true })?.locationRejected).toBe(true);
+    expect(sanitizeEvent({ ...ev(), locationRejected: 'yes' })?.locationRejected).toBeUndefined();
+  });
+  it('never revives invented sample entries from the old demo mode', () => {
+    expect(sanitizeEvent({ ...ev(), isDemo: true })).toBeNull();
+    expect(sanitizeEvent({ ...ev(), source: 'demo' })).toBeNull();
+    expect(sanitizeEvent({ ...ev(), isDemo: false })).not.toBeNull();
+  });
+  it('keeps the good saved entries when one is broken or an old sample', () => {
+    const good = ev({ id: 'tm:1' });
+    const kept = sanitizeSaved({ 'tm:1': good, 'demo:1': { ...ev({ id: 'demo:1' }), isDemo: true }, bad: { id: 'bad' } });
+    expect(Object.keys(kept!)).toEqual(['tm:1']);
+    expect(sanitizeSaved([good])).toBeUndefined();
+    expect(sanitizeSaved(null)).toBeUndefined();
   });
 });
 
@@ -135,9 +146,9 @@ describe('buildIcs', () => {
     expect(ics).toContain('TRIGGER:-PT1H');
     for (const line of ics.split('\r\n')) expect(new TextEncoder().encode(line).length).toBeLessThanOrEqual(75);
   });
-  it('labels demo events and writes date-only events as all-day', () => {
-    const ics = buildIcs(ev({ isDemo: true, timeKnown: false, start: '2026-11-20T23:00:00.000Z' }));
-    expect(ics).toContain('SUMMARY:[Beispiel] Konzert');
+  it('writes date-only events as all-day', () => {
+    const ics = buildIcs(ev({ timeKnown: false, start: '2026-11-20T23:00:00.000Z' }));
+    expect(ics).toContain('SUMMARY:Konzert');
     expect(ics).toContain('DTSTART;VALUE=DATE:20261121');
     expect(ics).toContain('DTEND;VALUE=DATE:20261122');
     expect(ics).not.toContain('VALARM');
@@ -162,8 +173,7 @@ describe('mapTarget', () => {
     expect(t!.links[0].href).toBe('https://maps.apple.com/search?query=Stadthalle%2C%20Bensheim');
     expect(t!.links.some((l) => l.href.includes('49.68'))).toBe(false);
   });
-  it('offers nothing for demo events or places that cannot be found', () => {
-    expect(mapTarget(ev({ isDemo: true, venue: 'X', area: 'Y', location: { lat: 1, lon: 2 } }))).toBeNull();
+  it('offers nothing for places that cannot be found', () => {
     expect(mapTarget(ev({ venue: 'Stadthalle' }))).toBeNull();
     expect(mapTarget(ev())).toBeNull();
   });
@@ -190,7 +200,6 @@ describe('theme', () => {
 describe('quality flags', () => {
   const now = new Date('2026-11-20T15:00:00Z');
   it('reports when an entry was last checked and flags stale ones', () => {
-    expect(freshness(ev({ isDemo: true, checkedAt: now.toISOString() }), now)).toEqual({ kind: 'demo' });
     expect(freshness(ev(), now)).toEqual({ kind: 'unknown' });
     const f = freshness(ev({ checkedAt: '2026-11-19T14:00:00Z' }), now);
     expect(f.kind === 'checked' && f.stale).toBe(true);
@@ -204,11 +213,11 @@ describe('quality flags', () => {
     expect(formatCheckedAt(new Date('2026-11-19T20:30:00Z'), now)).toBe('gestern, 21:30 Uhr');
     expect(formatCheckedAt(new Date('2026-11-17T12:00:00Z'), now)).toBe('17. November, 13:00 Uhr');
   });
-  it('lists details the source left out, never for demo entries', () => {
+  it('lists details the source left out', () => {
     expect(missingDetails(ev({ timeKnown: false }))).toEqual(['Uhrzeit', 'Ort', 'Kartenposition', 'Originalanzeige']);
     expect(missingDetails(ev({ venue: 'Halle', location: { lat: 49.8, lon: 8.6 }, locationApprox: true, url: 'https://a.org' }))).toEqual(['genaue Kartenposition']);
+    expect(missingDetails(ev({ venue: 'Halle', location: { lat: 49.8, lon: 8.6 }, locationApprox: true, locationRejected: true, url: 'https://a.org' }))).toEqual([]);
     expect(missingDetails(ev({ timeKnown: false, allDay: true, venue: 'Halle', location: { lat: 49.8, lon: 8.6 }, url: 'https://a.org' }))).toEqual([]);
-    expect(missingDetails(ev({ isDemo: true }))).toEqual([]);
   });
   it('flags listings of the same event whose sources disagree', () => {
     const a = ev({ id: 'a', source: 'tm', sourceName: 'Ticketmaster', venue: 'Centralstation', start: '2026-11-21T19:00:00.000Z' });
@@ -220,7 +229,6 @@ describe('quality flags', () => {
     expect(m.get('c')).toEqual(['Ticketmaster nennt als Ort „Centralstation“', 'Ticketmaster führt sie nicht als abgesagt', 'Stadtkalender nennt 20:30 Uhr', 'Stadtkalender nennt als Ort „Centralstation“', 'Stadtkalender führt sie nicht als abgesagt']);
     expect(m.has('d')).toBe(false);
     expect(findConflicts([a, { ...a, id: 'a2' }]).size).toBe(0);
-    expect(findConflicts([a, { ...b, isDemo: true }]).size).toBe(0);
   });
 });
 
@@ -246,5 +254,23 @@ describe('map provider choice and pins', () => {
     ]);
     expect(spots.map((s) => s.events.map((e) => e.id))).toEqual([['a', 'b'], ['c']]);
     expect(spots[1].approx).toBe(true);
+  });
+});
+
+describe('untrusted text and links', () => {
+  it('keeps a lone carriage return from starting a new calendar property', () => {
+    const ics = buildIcs(ev({ title: 'Konzert\rATTACH:https://evil.example/x', venue: 'Halle\rBEGIN:VALARM' }));
+    const lines = ics.split('\r\n');
+    expect(lines.some((l) => l.includes('\r'))).toBe(false);
+    expect(lines.some((l) => l.startsWith('ATTACH') || l.startsWith(' ATTACH'))).toBe(false);
+    expect(lines.filter((l) => l === 'BEGIN:VALARM').length).toBe(1); // only the app's own reminder
+  });
+
+  it('names where a listing link leads, with look-alike domains left in xn-- form', () => {
+    expect(linkTarget('https://www.stadt-darmstadt.de/x')).toEqual({ host: 'stadt-darmstadt.de', insecure: false });
+    expect(linkTarget('http://tickets.example.org/')).toEqual({ host: 'tickets.example.org', insecure: true });
+    expect(linkTarget('https://ticketmäster.de/')?.host).toMatch(/^xn--ticketmster-[a-z0-9]+\.de$/);
+    expect(linkTarget('javascript:alert(1)')).toBeNull();
+    expect(linkTarget('kein link')).toBeNull();
   });
 });

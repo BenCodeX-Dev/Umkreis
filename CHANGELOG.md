@@ -1,5 +1,23 @@
 # Änderungen
 
+## Unveröffentlicht
+
+### Geändert
+
+- **Demo-Modus entfernt.** Ohne eingerichtete Quelle zeigt Umkreis keine erfundenen Beispiele mehr, sondern einen Hinweis, wie man einen Ticketmaster-Schlüssel oder iCal-Kalender einrichtet; die Liste bleibt leer. `DEMO_MODE` wird nicht mehr gelesen. Früher gemerkte Beispiel-Einträge werden beim Laden entfernt.
+- **Gemerkte Einträge:** Ein beschädigter Eintrag im Speicher verwirft nicht mehr die ganze Liste, sondern nur sich selbst.
+
+### Sicherheit
+
+- **Vorschaubilder nur von öffentlichen Adressen:** Bildadressen aus Panoramax-Daten werden nur per `https` an öffentliche IP-Adressen abgerufen (geprüft wird die DNS-Antwort, verbunden wird genau mit der geprüften Adresse). Vorher konnte eine präparierte Bildadresse den Server Anfragen ins lokale Netz stellen lassen. Eine Gegenstelle mit ungültigem HTTP-Status bringt den Server nicht mehr zum Absturz.
+- **Ratenbegrenzung** für alle API-Aufrufe, die Fremddienste erreichen (`429` mit `Retry-After`), und höchstens 5 wartende Ortssuchen. Hinter einem eigenen Reverse-Proxy zählt sie mit `TRUST_PROXY=1` pro Client. Gleichzeitige gleiche Anfragen teilen sich einen Abruf bei der Quelle.
+- **Host-Prüfung auch bei `npm start`:** Ohne `ALLOWED_HOSTS` gelten auf 127.0.0.1/localhost automatisch nur die eigenen Namen; auf anderen Adressen warnt der Server beim Start.
+- `Cross-Origin-Resource-Policy` und `Cross-Origin-Opener-Policy` (`same-origin`) für Seite und API.
+- **Unplausible Ortsangaben aus iCal-Feeds** (außerhalb Deutschlands oder weiter als `area.radiusKm`, Standard 50 km, von der Ortsmitte des Kalenders) werden nicht mehr als Kartenposition übernommen; die Detailansicht sagt das. `area` muss in Deutschland liegen.
+- Die Detailansicht nennt die Ziel-Domain jeder Originalanzeige und warnt bei `http`.
+- Kalenderexport: Ein einzelnes Wagenrücklauf-Zeichen in Quelldaten kann keine zusätzlichen Kalenderfelder mehr einschleusen.
+- Mac-App: rundet den Gerätestandort schon nativ auf ≈ 1 km, lädt keine `data:`/`blob:`-Seiten mehr ins Fenster und macht Datenordner und `.env` nur für den eigenen Benutzer lesbar.
+
 ## 0.2.0 – 2026-11-20
 
 Karte, Mac-App und nachvollziehbare Angaben.

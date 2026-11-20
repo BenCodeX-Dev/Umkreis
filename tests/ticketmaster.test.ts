@@ -19,7 +19,6 @@ describe('normalizeTicketmasterEvent', () => {
   it('maps a complete record', () => {
     expect(normalizeTicketmasterEvent(raw)).toMatchObject({
       id: 'tm:G5abc',
-      isDemo: false,
       title: 'Jazz im Park',
       start: '2026-11-21T19:00:00.000Z',
       timeKnown: true,

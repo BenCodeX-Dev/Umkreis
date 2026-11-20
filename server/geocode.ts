@@ -5,6 +5,7 @@ import { TtlCache } from './cache.ts';
 import type { FetchFn } from './providers/types.ts';
 
 type Obj = Record<string, unknown>;
+export const MAX_WAITING = 5;
 const s = (v: unknown) => (typeof v === 'string' && v.trim() ? v.trim() : undefined);
 
 /** Maps Nominatim jsonv2 results to locality-level labels (never street addresses) and ~1 km coordinates. */
@@ -32,6 +33,7 @@ export function createGeocoder(url: string, userAgent: string, fetchFn: FetchFn 
   const cache = new TtlCache<GeocodeResult[]>(24 * 3_600_000, 500);
   let chain: Promise<unknown> = Promise.resolve();
   let last = 0;
+  let waiting = 0;
 
   // Nominatim policy: at most 1 request per second, no autocomplete, cache results.
   function throttle(): Promise<void> {
@@ -48,6 +50,10 @@ export function createGeocoder(url: string, userAgent: string, fetchFn: FetchFn 
     const key = query.toLowerCase().replace(/\s+/g, ' ').trim();
     const hit = cache.get(key);
     if (hit) return { results: hit, fallback: false };
+    // Requests queue at 1 per second; beyond a short queue answer from the offline list at once
+    // instead of holding connections open (and memory) for a flood of lookups.
+    if (waiting >= MAX_WAITING) return { results: searchCities(query), fallback: true };
+    waiting++;
     try {
       await throttle();
       const params = new URLSearchParams({ q: query, format: 'jsonv2', countrycodes: 'de', addressdetails: '1', limit: '6', 'accept-language': 'de' });
@@ -58,6 +64,8 @@ export function createGeocoder(url: string, userAgent: string, fetchFn: FetchFn 
       return { results, fallback: false };
     } catch {
       return { results: searchCities(query), fallback: true };
+    } finally {
+      waiting--;
     }
   };
 }

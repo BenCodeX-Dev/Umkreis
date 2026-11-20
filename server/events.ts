@@ -1,6 +1,6 @@
 import { distanceKm } from '../shared/geo.ts';
 import { normalizeForSearch } from '../shared/text.ts';
-import type { EventItem, EventsResponse, SourceStatus } from '../shared/types.ts';
+import type { EventItem, EventsResponse, SourceMode, SourceStatus } from '../shared/types.ts';
 import { TtlCache } from './cache.ts';
 import { ProviderError, type EventProvider, type ProviderQuery, type ProviderResult } from './providers/types.ts';
 
@@ -20,16 +20,26 @@ const dedupeKey = (e: EventItem) => `${normalizeForSearch(e.title).replace(/\W+/
 const venueKey = (e: EventItem) => (e.venue ? normalizeForSearch(e.venue).replace(/\W+/g, '') : '');
 
 /** Queries all providers in parallel, tolerating partial failure, then filters, de-duplicates and sorts. */
-export function createEventService(providers: EventProvider[], mode: 'live' | 'demo', cacheTtlMs = 5 * 60_000) {
+export function createEventService(providers: EventProvider[], mode: SourceMode, cacheTtlMs = 5 * 60_000) {
   const cache = new TtlCache<ProviderResult>(cacheTtlMs, 300);
+  /** Identical queries arriving while one is running share it instead of each calling the source again. */
+  const running = new Map<string, Promise<ProviderResult>>();
 
-  async function fromProvider(p: EventProvider, q: ProviderQuery): Promise<ProviderResult> {
+  function fromProvider(p: EventProvider, q: ProviderQuery): Promise<ProviderResult> {
     const key = `${p.id}|${queryKey(q)}`;
     const hit = cache.get(key);
-    if (hit) return hit;
-    const res = await p.fetchEvents(q);
-    cache.set(key, res);
-    return res;
+    if (hit) return Promise.resolve(hit);
+    const pending = running.get(key);
+    if (pending) return pending;
+    const job = p
+      .fetchEvents(q)
+      .then((res) => {
+        cache.set(key, res);
+        return res;
+      })
+      .finally(() => running.delete(key));
+    running.set(key, job);
+    return job;
   }
 
   return async function collect(q: ProviderQuery): Promise<EventsResponse & { allFailed: boolean }> {

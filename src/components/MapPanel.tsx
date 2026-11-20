@@ -20,7 +20,6 @@ interface Props {
 export function MapPanel({ pref, onPref, ...map }: Props) {
   const placed = map.events.filter((e) => e.location).length;
   const approx = map.events.filter((e) => e.location && e.locationApprox).length;
-  const demo = map.events.some((e) => e.isDemo);
 
   if (pref !== 'osm') {
     return (
@@ -59,7 +58,6 @@ export function MapPanel({ pref, onPref, ...map }: Props) {
             ? `${placed} ${placed === 1 ? 'Eintrag' : 'Einträge'} auf der Karte.`
             : `${placed} von ${map.events.length} auf der Karte – für die übrigen nennt die Quelle keine Position.`}
         {approx > 0 && ' Gestrichelte Kreise: nur ungefähre Lage (Mittelpunkt des Kalendergebiets).'}
-        {demo && ' Schraffierte Kreise: erfundene Beispielorte.'}
       </p>
     </div>
   );

@@ -1,4 +1,5 @@
 import { inferCategory, isCategoryId } from '../../shared/categories.ts';
+import { distanceKm, isInGermanyBounds } from '../../shared/geo.ts';
 import { hashString, plainText, safeHttpUrl } from '../../shared/text.ts';
 import type { CategoryId, EventItem, GeoPoint, PriceInfo } from '../../shared/types.ts';
 import { TtlCache } from '../cache.ts';
@@ -11,7 +12,21 @@ export interface FeedConfig {
   url: string;
   website?: string;
   category?: CategoryId;
-  area?: GeoPoint & { label: string };
+  /** Centre of the area the calendar covers; `radiusKm` is how far its events may lie from it. */
+  area?: GeoPoint & { label: string; radiusKm?: number };
+}
+
+/** Default reach of a feed area – a city plus its surrounding district. */
+export const DEFAULT_AREA_RADIUS_KM = 50;
+
+/**
+ * A feed's GEO is a claim, not a fact: it is used only inside Germany and, when the feed names an
+ * area, within that area's reach. Anything else (typos, swapped lat/lon, spoofed positions) is dropped.
+ */
+export function plausibleGeo(feed: FeedConfig, geo: GeoPoint | undefined): GeoPoint | undefined {
+  if (!geo || !isInGermanyBounds(geo)) return undefined;
+  if (feed.area && distanceKm(feed.area, geo) > (feed.area.radiusKm ?? DEFAULT_AREA_RADIUS_KM)) return undefined;
+  return geo;
 }
 
 const MAX_BYTES = 5 * 1024 * 1024;
@@ -56,7 +71,12 @@ export function validateFeed(raw: unknown): FeedConfig | string {
   if (f.area !== undefined) {
     const a = f.area as Record<string, unknown>;
     if (typeof a.lat !== 'number' || typeof a.lon !== 'number' || typeof a.label !== 'string') return `${f.id}: area braucht label, lat, lon`;
+    if (!isInGermanyBounds({ lat: a.lat, lon: a.lon })) return `${f.id}: area liegt außerhalb Deutschlands`;
     feed.area = { label: a.label, lat: a.lat, lon: a.lon };
+    if (a.radiusKm !== undefined) {
+      if (typeof a.radiusKm !== 'number' || !(a.radiusKm >= 1 && a.radiusKm <= 500)) return `${f.id}: area.radiusKm muss zwischen 1 und 500 liegen`;
+      feed.area.radiusKm = a.radiusKm;
+    }
   }
   return feed;
 }
@@ -69,12 +89,12 @@ export function icsEventToItems(feed: FeedConfig, ev: IcsEvent, from: Date, to: 
   const price: PriceInfo | undefined = description && FREE_RE.test(description) ? { currency: 'EUR', free: true, fromText: true } : undefined;
   const eventUrl = safeHttpUrl(ev.url);
   const baseId = hashString(ev.uid ?? `${title}|${ev.start.utc.toISOString()}`);
+  const geo = plausibleGeo(feed, ev.geo);
 
   return expandOccurrences(ev, from, to, 100, budget).map((occ) => ({
     id: `ics:${feed.id}:${baseId}:${occ.start.getTime()}`,
     source: `ics:${feed.id}`,
     sourceName: feed.name,
-    isDemo: false,
     title,
     start: occ.start.toISOString(),
     end: occ.end?.toISOString(),
@@ -82,8 +102,9 @@ export function icsEventToItems(feed: FeedConfig, ev: IcsEvent, from: Date, to: 
     allDay: ev.start.dateOnly || undefined,
     venue: plainText(ev.location, 160),
     area: feed.area?.label,
-    location: ev.geo ?? (feed.area ? { lat: feed.area.lat, lon: feed.area.lon } : undefined),
-    locationApprox: !ev.geo && !!feed.area,
+    location: geo ?? (feed.area ? { lat: feed.area.lat, lon: feed.area.lon } : undefined),
+    locationApprox: !geo && !!feed.area,
+    locationRejected: (!!ev.geo && !geo) || undefined,
     category,
     price,
     description,

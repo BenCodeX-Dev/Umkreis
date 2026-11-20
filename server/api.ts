@@ -3,6 +3,7 @@ import { coarsen, isInGermanyBounds } from '../shared/geo.ts';
 import { buildProviders, type ServerConfig } from './config.ts';
 import { createEventService } from './events.ts';
 import { createGeocoder } from './geocode.ts';
+import { clientAddress, createRateLimiter, type RateLimit } from './rateLimit.ts';
 import { createStreetLevel, StreetLevelError } from './streetlevel.ts';
 import type { FetchFn, ProviderQuery } from './providers/types.ts';
 
@@ -41,11 +42,14 @@ export function parseEventsRequest(body: unknown, now = new Date()): Parsed<Prov
   return { ok: true, value: q };
 }
 
-function send(res: ServerResponse, status: number, data: unknown): void {
+const API_HEADERS = { 'X-Content-Type-Options': 'nosniff', 'Cross-Origin-Resource-Policy': 'same-origin' };
+
+function send(res: ServerResponse, status: number, data: unknown, extra: Record<string, string> = {}): void {
   res.writeHead(status, {
+    ...API_HEADERS,
     'Content-Type': 'application/json; charset=utf-8',
     'Cache-Control': 'no-store',
-    'X-Content-Type-Options': 'nosniff',
+    ...extra,
   });
   res.end(JSON.stringify(data));
 }
@@ -62,11 +66,12 @@ async function readJson(req: IncomingMessage): Promise<unknown> {
 }
 
 /** Returns a handler that answers /api/* requests and resolves to false for anything else. */
-export function createApiHandler(cfg: ServerConfig, fetchFn: FetchFn = fetch) {
+export function createApiHandler(cfg: ServerConfig, fetchFn: FetchFn = fetch, limits?: { client: RateLimit; shared: RateLimit }) {
   const { providers, mode } = buildProviders(cfg, fetchFn);
   const collect = createEventService(providers, mode);
   const geocode = createGeocoder(cfg.geocoderUrl, cfg.geocoderUserAgent, fetchFn);
   const streetLevel = createStreetLevel(cfg.appUserAgent, fetchFn);
+  const rateLimit = createRateLimiter(limits?.client, limits?.shared);
 
   return async function handle(req: IncomingMessage, res: ServerResponse): Promise<boolean> {
     const pathname = new URL(req.url ?? '/', 'http://localhost').pathname;
@@ -76,6 +81,12 @@ export function createApiHandler(cfg: ServerConfig, fetchFn: FetchFn = fetch) {
       send(res, 200, { mode, sources: providers.map((p) => ({ id: p.id, name: p.name, kind: p.kind })) });
       return true;
     }
+    // Everything below may call a third-party service, so it counts against the rate limit.
+    const wait = rateLimit(clientAddress(req.socket.remoteAddress, req.headers['x-forwarded-for'], cfg.trustProxy === true));
+    if (wait > 0) {
+      send(res, 429, { error: 'Zu viele Anfragen in kurzer Zeit. Bitte einen Moment warten und erneut versuchen.', code: 'rate_limited' }, { 'Retry-After': String(wait) });
+      return true;
+    }
     const thumbId = /^\/api\/streetlevel\/thumb\/([0-9a-f-]{36})$/i.exec(pathname)?.[1];
     if (thumbId && req.method === 'GET') {
       const img = await streetLevel.thumb(thumbId);
@@ -83,7 +94,7 @@ export function createApiHandler(cfg: ServerConfig, fetchFn: FetchFn = fetch) {
         send(res, 404, { error: 'Bild nicht verfügbar.' });
         return true;
       }
-      res.writeHead(200, { 'Content-Type': img.type, 'Cache-Control': 'private, max-age=86400', 'X-Content-Type-Options': 'nosniff' });
+      res.writeHead(200, { ...API_HEADERS, 'Content-Type': img.type, 'Cache-Control': 'private, max-age=86400' });
       res.end(img.body);
       return true;
     }
@@ -127,13 +138,13 @@ export function createApiHandler(cfg: ServerConfig, fetchFn: FetchFn = fetch) {
       return true;
     }
 
-    if (providers.length === 0) {
-      send(res, 503, { error: 'Es ist keine Veranstaltungsquelle eingerichtet. Siehe README: Ticketmaster-Schlüssel oder iCal-Feeds konfigurieren.', code: 'no_sources' });
-      return true;
-    }
     const parsed = parseEventsRequest(body);
     if (!parsed.ok) {
       send(res, 400, { error: parsed.error });
+      return true;
+    }
+    if (providers.length === 0) {
+      send(res, 503, { error: 'Es ist keine Veranstaltungsquelle eingerichtet. Siehe README: Ticketmaster-Schlüssel oder iCal-Feeds konfigurieren.', code: 'no_sources' });
       return true;
     }
     const result = await collect(parsed.value);
