@@ -7,6 +7,7 @@ import { createApiHandler, parseEventsRequest } from '../server/api.ts';
 import { createEventService, MAX_EVENTS } from '../server/events.ts';
 import { parseNominatim } from '../server/geocode.ts';
 import { createStreetLevel, isPublicHttpsUrl, parsePanoramaxSearch } from '../server/streetlevel.ts';
+import { isPublicIp, publicOnlyFetch, publicOnlyLookup } from '../server/publicFetch.ts';
 import { createDemoProvider } from '../server/providers/demo.ts';
 import { ProviderError, type EventProvider, type ProviderQuery } from '../server/providers/types.ts';
 
@@ -268,7 +269,7 @@ describe('street-level imagery (Panoramax)', () => {
     const f = vi.fn(async (url: string) =>
       url.startsWith('https://api.panoramax.xyz/') ? json(feature()) : new Response(img, { headers: { 'Content-Type': 'image/jpeg' } }),
     );
-    const sl = createStreetLevel('UmkreisTest/1', f as unknown as typeof fetch);
+    const sl = createStreetLevel('UmkreisTest/1', f as unknown as typeof fetch, f as unknown as typeof fetch);
     expect(await sl.thumb(ID)).toBeNull(); // not looked up yet
     const r = await sl.lookup({ lat: 49.87, lon: 8.65 });
     expect(r.available).toBe(true);
@@ -281,14 +282,14 @@ describe('street-level imagery (Panoramax)', () => {
     const big = vi.fn(async (url: string) =>
       url.startsWith('https://api.panoramax.xyz/') ? json(feature()) : new Response(new Uint8Array(700_000), { headers: { 'Content-Type': 'image/jpeg' } }),
     );
-    const sl2 = createStreetLevel('UmkreisTest/1', big as unknown as typeof fetch);
+    const sl2 = createStreetLevel('UmkreisTest/1', f as unknown as typeof fetch, big as unknown as typeof fetch);
     await sl2.lookup({ lat: 49.87, lon: 8.65 });
     expect(await sl2.thumb(ID)).toBeNull();
 
     const html = vi.fn(async (url: string) =>
       url.startsWith('https://api.panoramax.xyz/') ? json(feature()) : new Response('<html>', { headers: { 'Content-Type': 'text/html' } }),
     );
-    const sl3 = createStreetLevel('UmkreisTest/1', html as unknown as typeof fetch);
+    const sl3 = createStreetLevel('UmkreisTest/1', f as unknown as typeof fetch, html as unknown as typeof fetch);
     await sl3.lookup({ lat: 49.87, lon: 8.65 });
     expect(await sl3.thumb(ID)).toBeNull();
   });
@@ -298,5 +299,23 @@ describe('street-level imagery (Panoramax)', () => {
       throw new TypeError('fetch failed');
     }) as unknown as typeof fetch);
     await expect(sl.lookup({ lat: 49.87, lon: 8.65 })).rejects.toThrow('Panoramax ist gerade nicht erreichbar.');
+  });
+});
+
+describe('public-only fetch for third-party picture URLs', () => {
+  it('tells public from private, loopback, link-local and mapped addresses', () => {
+    for (const ip of ['127.0.0.1', '10.1.2.3', '172.20.0.1', '192.168.1.1', '169.254.169.254', '100.64.0.1', '0.0.0.0', '::1', '::', 'fe80::1', 'fd00::1', '::ffff:127.0.0.1', '::ffff:7f00:1', '::ffff:10.0.0.1', 'not-an-ip']) {
+      expect(isPublicIp(ip), ip).toBe(false);
+    }
+    for (const ip of ['8.8.8.8', '141.1.1.1', '2a00:1450:4001::1']) {
+      expect(isPublicIp(ip), ip).toBe(true);
+    }
+  });
+
+  it('refuses a hostname that resolves to this machine', async () => {
+    const err = await new Promise<NodeJS.ErrnoException | null>((resolve) => publicOnlyLookup('localhost', {}, (e) => resolve(e)));
+    expect(err?.code).toBe('ENOTPUBLIC');
+    await expect(publicOnlyFetch('https://localhost/a.jpg')).rejects.toMatchObject({ code: 'ENOTPUBLIC' });
+    await expect(publicOnlyFetch('http://example.org/a.jpg')).rejects.toThrow('Nur https');
   });
 });

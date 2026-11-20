@@ -3,6 +3,7 @@ import type { GeoPoint } from '../shared/types.ts';
 import { TtlCache } from './cache.ts';
 import { readTextCapped } from './providers/ics.ts';
 import type { FetchFn } from './providers/types.ts';
+import { publicOnlyFetch } from './publicFetch.ts';
 
 /**
  * Street-level imagery from Panoramax (https://panoramax.fr), a free, federated photo commons
@@ -100,7 +101,8 @@ async function readBytesCapped(res: Response, limit: number): Promise<Buffer | n
   return Buffer.concat(chunks);
 }
 
-export function createStreetLevel(userAgent: string, fetchFn: FetchFn = fetch) {
+/** `imageFetch` loads picture URLs taken from federated data, so by default it only reaches public addresses. */
+export function createStreetLevel(userAgent: string, fetchFn: FetchFn = fetch, imageFetch: FetchFn = publicOnlyFetch) {
   const results = new TtlCache<StreetLevelResult>(DAY_MS, 500);
   const thumbs = new TtlCache<string>(DAY_MS, 500);
 
@@ -141,7 +143,7 @@ export function createStreetLevel(userAgent: string, fetchFn: FetchFn = fetch) {
     const url = UUID.test(id) ? thumbs.get(id) : undefined;
     if (!url) return null;
     try {
-      const res = await fetchFn(url, { signal: AbortSignal.timeout(8_000), headers: { Accept: 'image/jpeg, image/webp, image/png', 'User-Agent': userAgent }, redirect: 'error' });
+      const res = await imageFetch(url, { signal: AbortSignal.timeout(8_000), headers: { Accept: 'image/jpeg, image/webp, image/png', 'User-Agent': userAgent }, redirect: 'error' });
       const type = (res.headers.get('content-type') ?? '').split(';')[0].trim();
       if (!res.ok || !/^image\/(jpeg|png|webp)$/.test(type)) return null;
       const body = await readBytesCapped(res, MAX_THUMB);
