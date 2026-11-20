@@ -20,4 +20,6 @@ function apiPlugin(mode: string): Plugin {
 
 export default defineConfig(({ mode }) => ({
   plugins: [react(), apiPlugin(mode)],
+  // Build output (dist/, the Mac app copy in build/) is not source: changes there must not reload the dev page.
+  server: { watch: { ignored: ['**/build/**', '**/dist/**'] } },
 }));
