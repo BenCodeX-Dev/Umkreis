@@ -15,10 +15,11 @@ Erste veröffentlichte Version.
 - **Datenquellen:** Ticketmaster Discovery API und frei eintragbare iCal/ICS-Feeds (z. B. Wochenmärkte, Vereins- und Stadtkalender). Ohne eingerichtete Quelle startet ein klar gekennzeichneter Demo-Modus.
 - **Ortssuche** über Nominatim/OpenStreetMap, Städte-Schnellauswahl und – auf Wunsch – grober Gerätestandort.
 
-### Datenschutz
+### Datenschutz und Sicherheit
 
 - Standorte werden auf ca. 1 km gerundet, nur per POST an den eigenen Server übertragen und nicht protokolliert.
 - Keine Cookies, keine Analyse, keine externen Schriften oder Skripte; strikte Content-Security-Policy im Produktionsbetrieb.
+- iCal-Feeds werden begrenzt verarbeitet: Der Download bricht über 5 MB ab (auch ohne Größenangabe des Servers), pro Feed zählen höchstens 10 000 Termine, und Wiederholungsregeln haben pro Anfrage ein festes Rechenbudget. Wird eine Grenze erreicht, erscheint „Es gibt mehr Treffer als angezeigt“.
 - Interessen, gemerkte Veranstaltungen, Darstellung und – nur mit Zustimmung – der Standort bleiben im `localStorage` dieses Browsers.
 
 ### Bekannte Einschränkungen

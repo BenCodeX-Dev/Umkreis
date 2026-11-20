@@ -85,7 +85,7 @@ Weitere Variablen: siehe [.env.example](.env.example) (`DEMO_MODE`, `GEOCODER_UR
 
 - **Abdeckung hängt von den Quellen ab.** Ticketmaster listet vor allem Ticket-Veranstaltungen; Märkte, Flohmärkte und Vereinsfeste erscheinen nur, wenn passende iCal-Feeds eingetragen sind. Eine bundesweite offene Quelle dafür ist nicht eingebunden.
 - Ticketmaster: höchstens 100 Treffer pro Anfrage (Hinweis „mehr Treffer als angezeigt“), Ratenlimit des kostenlosen Schlüssels (Werte laut Ticketmaster-Dokumentation). Ergebnisse werden 5 Minuten zwischengespeichert.
-- ICS: Wiederholungen nach `DAILY`/`WEEKLY`/`MONTHLY`/`YEARLY` (inkl. `BYDAY`, `COUNT`, `UNTIL`, `EXDATE`). Andere Regeln (z. B. `HOURLY`, `BYSETPOS`) liefern nur den ersten Termin. Kategorien werden per Stichwort erraten.
+- ICS: Wiederholungen nach `DAILY`/`WEEKLY`/`MONTHLY`/`YEARLY` (inkl. `BYDAY`, `COUNT`, `UNTIL`, `EXDATE`). Andere Regeln (z. B. `HOURLY`, `BYSETPOS`) liefern nur den ersten Termin. Kategorien werden per Stichwort erraten. Grenzen pro Feed: 5 MB, 10 000 Termine, begrenzter Rechenaufwand für Wiederholungen – darüber erscheint der Hinweis „mehr Treffer als angezeigt“.
 - Angaben (Zeiten, Preise, Absagen) stammen ungeprüft aus den Quellen – maßgeblich ist die verlinkte Originalanzeige.
 - Ortssuche über Nominatim: nur auf Absenden, max. 1 Anfrage/s; bei Ausfall bleibt die Städte-Schnellauswahl.
 - Ohne Server (rein statisch gehostet) funktioniert nur die Oberfläche, nicht die Datenabfrage.

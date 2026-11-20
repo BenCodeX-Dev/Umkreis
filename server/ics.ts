@@ -153,7 +153,10 @@ function buildEvent(props: Prop[]): IcsEvent | null {
   };
 }
 
-export function parseIcs(text: string): IcsEvent[] {
+/** Upper bound of VEVENTs kept per calendar; a larger file is cut off (and reported as truncated by the provider). */
+export const MAX_EVENTS = 10_000;
+
+export function parseIcs(text: string, maxEvents = MAX_EVENTS): IcsEvent[] {
   const events: IcsEvent[] = [];
   const stack: string[] = [];
   let current: Prop[] | null = null;
@@ -169,15 +172,23 @@ export function parseIcs(text: string): IcsEvent[] {
         const ev = buildEvent(current);
         if (ev) events.push(ev);
         current = null;
+        if (events.length >= maxEvents) break;
       }
     } else if (current && stack[stack.length - 1] === 'VEVENT') {
       current.push(prop);
     }
   }
   // Modified single instances (RECURRENCE-ID) replace the matching occurrence of their series.
+  const masters = new Map<string, IcsEvent[]>();
+  for (const ev of events) {
+    if (!ev.uid || !ev.rrule || ev.recurrenceId !== undefined) continue;
+    const list = masters.get(ev.uid);
+    if (list) list.push(ev);
+    else masters.set(ev.uid, [ev]);
+  }
   for (const ov of events) {
     if (ov.recurrenceId === undefined || !ov.uid) continue;
-    for (const master of events) if (master !== ov && master.uid === ov.uid && master.rrule) master.exdates.push(ov.recurrenceId);
+    for (const master of masters.get(ov.uid) ?? []) master.exdates.push(ov.recurrenceId);
   }
   return events;
 }
@@ -261,8 +272,17 @@ function matchesRule(rule: Rule, dayIndex: number, y: number, m: number, d: numb
 
 export interface Occurrence { start: Date; end?: Date }
 
+/** Day steps one recurring event may walk (≈ 55 years). */
+const MAX_STEPS_PER_EVENT = 20_000;
+
+/**
+ * Shared step allowance for one request, so a feed full of long-running series cannot burn CPU.
+ * `exhausted` tells the caller that some occurrences may be missing.
+ */
+export interface ExpandBudget { steps: number; exhausted?: boolean }
+
 /** All occurrences overlapping [from, to). Unsupported rules yield only the first instance. */
-export function expandOccurrences(ev: IcsEvent, from: Date, to: Date, max = 100): Occurrence[] {
+export function expandOccurrences(ev: IcsEvent, from: Date, to: Date, max = 100, budget?: ExpandBudget): Occurrence[] {
   const fromMs = from.getTime(), toMs = to.getTime();
   const span = ev.durationMs ?? (ev.start.dateOnly ? DAY_MS : 0);
   const overlaps = (s: number) => (span > 0 ? s < toMs && s + span > fromMs : s >= fromMs && s < toMs);
@@ -279,14 +299,27 @@ export function expandOccurrences(ev: IcsEvent, from: Date, to: Date, max = 100)
   const startWd = new Date(startDay).getUTCDay();
   // Without COUNT we can jump close to the window instead of walking from DTSTART.
   const skip = rule.count ? 0 : Math.max(0, Math.floor((fromMs - startDay) / DAY_MS) - Math.ceil(span / DAY_MS) - 2);
+  // Days this far before the window cannot overlap it, whatever the time zone (offsets stay under ±1 day).
+  const earlyBefore = fromMs - span - 2 * DAY_MS;
   const out: Occurrence[] = [];
   let seen = 0;
-  for (let i = skip; i - skip < 20_000; i++) {
+  for (let i = skip; i - skip < MAX_STEPS_PER_EVENT; i++) {
+    if (budget && budget.steps-- <= 0) {
+      budget.exhausted = true;
+      break;
+    }
     const dayMs = startDay + i * DAY_MS;
     if (dayMs > toMs + DAY_MS) break;
     const dt = new Date(dayMs);
     const y = dt.getUTCFullYear(), m = dt.getUTCMonth() + 1, d = dt.getUTCDate(), wd = dt.getUTCDay();
     if (i !== 0 && !matchesRule(rule, i, y, m, d, wd, ev.start, startWd)) continue;
+    if (dayMs < earlyBefore) {
+      // Only counts toward COUNT; skip the costly time-zone conversion.
+      if (rule.until !== undefined && dayMs - 2 * DAY_MS > rule.until) break;
+      seen++;
+      if (rule.count !== undefined && seen > rule.count) break;
+      continue;
+    }
     const s = (ev.start.dateOnly ? zonedToUtc(y, m, d, 0, 0, 0, ev.start.tz) : zonedToUtc(y, m, d, sl.h, sl.mi, sl.s, ev.start.tz)).getTime();
     if (rule.until !== undefined && s > rule.until) break;
     if (s >= toMs) break;

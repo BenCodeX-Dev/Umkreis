@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { expandOccurrences, parseIcs, unfold } from '../server/ics.ts';
-import { icsEventToItems, validateFeed, type FeedConfig } from '../server/providers/ics.ts';
+import { icsEventToItems, readTextCapped, validateFeed, type FeedConfig } from '../server/providers/ics.ts';
 
 const cal = (...lines: string[]) => ['BEGIN:VCALENDAR', 'VERSION:2.0', ...lines, 'END:VCALENDAR'].join('\r\n');
 const vevent = (...lines: string[]) => ['BEGIN:VEVENT', ...lines, 'END:VEVENT'].join('\r\n');
@@ -90,6 +90,76 @@ describe('expandOccurrences', () => {
   it('never invents occurrences for unsupported rules', () => {
     const ev = one('DTSTART;TZID=Europe/Berlin:20261121T100000', 'RRULE:FREQ=HOURLY');
     expect(expandOccurrences(ev, from, new Date('2026-11-23T00:00:00Z'))).toHaveLength(1);
+  });
+
+  it('counts long COUNT series from a distant DTSTART exactly', () => {
+    const to = new Date('2026-12-01T00:00:00Z');
+    // 2000-01-01 + 9820 days = 2026-11-20, so COUNT=9823 ends on 2026-11-22.
+    const ending = one('DTSTART;TZID=Europe/Berlin:20000101T180000', 'RRULE:FREQ=DAILY;COUNT=9823');
+    expect(expandOccurrences(ending, from, to).map((o) => iso(o.start))).toEqual([
+      '2026-11-20T17:00:00.000Z',
+      '2026-11-21T17:00:00.000Z',
+      '2026-11-22T17:00:00.000Z',
+    ]);
+    const ended = one('DTSTART;TZID=Europe/Berlin:20000101T180000', 'RRULE:FREQ=DAILY;COUNT=9000');
+    expect(expandOccurrences(ended, from, to)).toEqual([]);
+  });
+
+  it('stops when the shared step budget is used up and says so', () => {
+    const ev = one('DTSTART;TZID=Europe/Berlin:20000101T180000', 'RRULE:FREQ=DAILY;COUNT=9823');
+    const budget = { steps: 100, exhausted: false };
+    expect(expandOccurrences(ev, from, new Date('2026-12-01T00:00:00Z'), 100, budget)).toEqual([]);
+    expect(budget.exhausted).toBe(true);
+  });
+
+  it('replaces a moved instance (RECURRENCE-ID) instead of showing it twice', () => {
+    const [master, moved] = parseIcs(
+      cal(
+        vevent('UID:m', 'SUMMARY:Markt', 'DTSTART;TZID=Europe/Berlin:20261003T080000', 'RRULE:FREQ=WEEKLY;BYDAY=SA'),
+        vevent('UID:m', 'SUMMARY:Markt', 'RECURRENCE-ID;TZID=Europe/Berlin:20261121T080000', 'DTSTART;TZID=Europe/Berlin:20261121T100000'),
+      ),
+    );
+    const to = new Date('2026-11-29T00:00:00Z');
+    expect(expandOccurrences(master, from, to).map((o) => iso(o.start))).toEqual(['2026-11-28T07:00:00.000Z']);
+    expect(expandOccurrences(moved, from, to).map((o) => iso(o.start))).toEqual(['2026-11-21T09:00:00.000Z']);
+  });
+});
+
+describe('feed limits', () => {
+  it('keeps at most maxEvents VEVENTs', () => {
+    const many = cal(...Array.from({ length: 5 }, (_, i) => vevent(`UID:${i}`, 'SUMMARY:X', 'DTSTART:20261121T100000Z')));
+    expect(parseIcs(many, 3)).toHaveLength(3);
+  });
+
+  const streamOf = (chunks: Uint8Array[], onCancel?: () => void) =>
+    new Response(
+      new ReadableStream<Uint8Array>({
+        pull(c) {
+          const next = chunks.shift();
+          if (next) c.enqueue(next);
+          else c.close();
+        },
+        cancel: onCancel,
+      }),
+    );
+
+  it('reads a body under the limit, also across split UTF-8 characters', async () => {
+    const bytes = new TextEncoder().encode('Kränzchen');
+    expect(await readTextCapped(streamOf([bytes.slice(0, 3), bytes.slice(3)]), 100)).toBe('Kränzchen');
+  });
+
+  it('cancels the download as soon as the limit is passed, even without Content-Length', async () => {
+    let cancelled = false;
+    const chunk = new Uint8Array(64);
+    const res = streamOf([chunk, chunk, chunk, chunk], () => (cancelled = true));
+    await expect(readTextCapped(res, 100)).rejects.toThrow();
+    expect(cancelled).toBe(true);
+  });
+
+  it('rejects an announced oversized body before reading it', async () => {
+    const res = new Response('x', { headers: { 'content-length': '999999' } });
+    await expect(readTextCapped(res, 100)).rejects.toThrow();
+    expect(res.bodyUsed).toBe(false);
   });
 });
 

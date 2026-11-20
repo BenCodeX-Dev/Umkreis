@@ -2,7 +2,7 @@ import { inferCategory, isCategoryId } from '../../shared/categories.ts';
 import { hashString, plainText, safeHttpUrl } from '../../shared/text.ts';
 import type { CategoryId, EventItem, GeoPoint, PriceInfo } from '../../shared/types.ts';
 import { TtlCache } from '../cache.ts';
-import { expandOccurrences, parseIcs, type IcsEvent } from '../ics.ts';
+import { expandOccurrences, MAX_EVENTS, parseIcs, type ExpandBudget, type IcsEvent } from '../ics.ts';
 import { ProviderError, type EventProvider, type FetchFn } from './types.ts';
 
 export interface FeedConfig {
@@ -15,6 +15,31 @@ export interface FeedConfig {
 }
 
 const MAX_BYTES = 5 * 1024 * 1024;
+/** Recurrence day steps per feed and request – generous for real calendars, bounded for broken ones. */
+const MAX_STEPS_PER_REQUEST = 500_000;
+
+class TooLarge extends Error {}
+
+/** Reads the body as UTF-8 text and stops (cancelling the download) as soon as it exceeds `limit` bytes. */
+export async function readTextCapped(res: Response, limit: number): Promise<string> {
+  if (Number(res.headers.get('content-length') ?? 0) > limit) throw new TooLarge();
+  if (!res.body) return '';
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let total = 0;
+  let text = '';
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.byteLength;
+    if (total > limit) {
+      await reader.cancel().catch(() => {});
+      throw new TooLarge();
+    }
+    text += decoder.decode(value, { stream: true });
+  }
+  return text + decoder.decode();
+}
 const FREE_RE = /eintritt (ist )?frei|freier eintritt|kostenlos|kostenfrei|free admission/i;
 
 export function validateFeed(raw: unknown): FeedConfig | string {
@@ -36,7 +61,7 @@ export function validateFeed(raw: unknown): FeedConfig | string {
   return feed;
 }
 
-export function icsEventToItems(feed: FeedConfig, ev: IcsEvent, from: Date, to: Date): EventItem[] {
+export function icsEventToItems(feed: FeedConfig, ev: IcsEvent, from: Date, to: Date, budget?: ExpandBudget): EventItem[] {
   const title = plainText(ev.summary, 160);
   if (!title) return [];
   const description = plainText(ev.description);
@@ -45,7 +70,7 @@ export function icsEventToItems(feed: FeedConfig, ev: IcsEvent, from: Date, to: 
   const eventUrl = safeHttpUrl(ev.url);
   const baseId = hashString(ev.uid ?? `${title}|${ev.start.utc.toISOString()}`);
 
-  return expandOccurrences(ev, from, to).map((occ) => ({
+  return expandOccurrences(ev, from, to, 100, budget).map((occ) => ({
     id: `ics:${feed.id}:${baseId}:${occ.start.getTime()}`,
     source: `ics:${feed.id}`,
     sourceName: feed.name,
@@ -70,6 +95,7 @@ export function icsEventToItems(feed: FeedConfig, ev: IcsEvent, from: Date, to: 
 
 export function createIcsProvider(feed: FeedConfig, fetchFn: FetchFn = fetch, ttlMs = 15 * 60_000): EventProvider {
   const cache = new TtlCache<IcsEvent[]>(ttlMs, 1);
+  const tooLarge = () => new ProviderError(`${feed.name}: Kalenderdatei ist zu groß.`);
   async function load(): Promise<IcsEvent[]> {
     const hit = cache.get('feed');
     if (hit) return hit;
@@ -80,9 +106,12 @@ export function createIcsProvider(feed: FeedConfig, fetchFn: FetchFn = fetch, tt
       throw new ProviderError(`${feed.name} ist gerade nicht erreichbar.`);
     }
     if (!res.ok) throw new ProviderError(`${feed.name} antwortet mit Fehler ${res.status}.`);
-    if (Number(res.headers.get('content-length') ?? 0) > MAX_BYTES) throw new ProviderError(`${feed.name}: Kalenderdatei ist zu groß.`);
-    const text = await res.text();
-    if (text.length > MAX_BYTES) throw new ProviderError(`${feed.name}: Kalenderdatei ist zu groß.`);
+    let text: string;
+    try {
+      text = await readTextCapped(res, MAX_BYTES);
+    } catch (err) {
+      throw err instanceof TooLarge ? tooLarge() : new ProviderError(`${feed.name} ist gerade nicht erreichbar.`);
+    }
     if (!/BEGIN:VCALENDAR/i.test(text)) throw new ProviderError(`${feed.name} liefert keinen gültigen iCal-Kalender.`);
     const events = parseIcs(text);
     cache.set('feed', events);
@@ -95,7 +124,9 @@ export function createIcsProvider(feed: FeedConfig, fetchFn: FetchFn = fetch, tt
     kind: 'ics',
     async fetchEvents(q) {
       const events = await load();
-      return { events: events.flatMap((ev) => icsEventToItems(feed, ev, q.from, q.to)) };
+      const budget: ExpandBudget = { steps: MAX_STEPS_PER_REQUEST };
+      const items = events.flatMap((ev) => icsEventToItems(feed, ev, q.from, q.to, budget));
+      return { events: items, truncated: budget.exhausted || events.length >= MAX_EVENTS || undefined };
     },
   };
 }
