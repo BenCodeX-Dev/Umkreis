@@ -122,7 +122,8 @@ export function createIcsProvider(feed: FeedConfig, fetchFn: FetchFn = fetch, tt
     if (hit) return hit;
     let res: Response;
     try {
-      res = await fetchFn(feed.url, { signal: AbortSignal.timeout(10_000), headers: { Accept: 'text/calendar, text/plain;q=0.8' } });
+      // Some calendar servers build the file on request (szene-Radar Freiburg: ~13 s); the result is cached.
+      res = await fetchFn(feed.url, { signal: AbortSignal.timeout(20_000), headers: { Accept: 'text/calendar, text/plain;q=0.8' } });
     } catch {
       throw new ProviderError(`${feed.name} ist gerade nicht erreichbar.`);
     }

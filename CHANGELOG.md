@@ -2,6 +2,10 @@
 
 ## Unveröffentlicht
 
+### Neu
+
+- **Offene Daten von destination.one** als Quelle ohne Schlüssel, standardmäßig an (`DESTINATION_ONE=off` schaltet sie ab). Wiederkehrende Termine (wöchentliche Märkte, tägliche Ausstellungen, „jeden 1. Dienstag“) werden für den gewählten Zeitraum in einzelne Termine aufgelöst. Nur Einträge unter Public Domain oder CC0 werden übernommen.
+
 ### Geändert
 
 - **Demo-Modus entfernt.** Ohne eingerichtete Quelle zeigt Umkreis keine erfundenen Beispiele mehr, sondern einen Hinweis, wie man einen Ticketmaster-Schlüssel oder iCal-Kalender einrichtet; die Liste bleibt leer. `DEMO_MODE` wird nicht mehr gelesen. Früher gemerkte Beispiel-Einträge werden beim Laden entfernt.

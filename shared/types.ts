@@ -63,7 +63,7 @@ export interface EventItem {
 export interface SourceStatus {
   id: string;
   name: string;
-  kind: 'ticketmaster' | 'ics';
+  kind: 'ticketmaster' | 'ics' | 'opendata';
   ok: boolean;
   count: number;
   message?: string;
@@ -71,7 +71,7 @@ export interface SourceStatus {
   checkedAt?: string;
 }
 
-/** `unconfigured`: no Ticketmaster key and no iCal feed is set up, so there is nothing to show. */
+/** `unconfigured`: no source is switched on (no open data, Ticketmaster key or iCal feed), so there is nothing to show. */
 export type SourceMode = 'live' | 'unconfigured';
 
 export interface EventsResponse {

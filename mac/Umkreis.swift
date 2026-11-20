@@ -150,6 +150,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
         Umkreis zeigt nur echte Veranstaltungen aus Quellen, die hier eingerichtet sind.
         Ohne Quelle bleibt die Liste leer – es werden keine Einträge erfunden.
 
+        Offene Daten (destination.one) sind ohne Schlüssel eingeschaltet.
+        Abschalten: in „.env“ die Zeile  DESTINATION_ONE=off
+
         Ticketmaster: Lege hier eine Datei „.env“ an mit der Zeile
           TICKETMASTER_API_KEY=dein-schlüssel
         (kostenloser Schlüssel: https://developer.ticketmaster.com)

@@ -102,8 +102,15 @@ Prüfen: `npm run check` (Typecheck, Lint, Tests, Build).
 
 | Quelle | Deckt ab | Einrichtung |
 |---|---|---|
+| **destination.one Open Data** | Märkte, Ausstellungen, Führungen, Konzerte, Feste aus den Veranstaltungsdatenbanken deutscher Tourismusregionen | Ohne Schlüssel, standardmäßig an. Abschalten mit `DESTINATION_ONE=off` |
 | **Ticketmaster Discovery API** | Konzerte, Partys, Sport, Kultur mit Ticketverkauf | Kostenlosen Schlüssel holen auf developer.ticketmaster.com, in `.env` als `TICKETMASTER_API_KEY` |
 | **iCal/ICS-Feeds** | Wochenmärkte, Vereins-, Stadt- und Gemeindekalender | `config/feeds.example.json` nach `config/feeds.json` kopieren und öffentliche `.ics`-Adressen eintragen |
+
+**destination.one:** Daten von [open.destination.one](https://open.destination.one) (Open-Data-Schnittstelle der Tourismusregionen). Umkreis übernimmt nur Einträge unter Public Domain oder CC0. Einträge unter CC BY / CC BY-SA werden ausgelassen, weil dort meist kein Urheber genannt ist, den man korrekt angeben könnte. Die Abdeckung ist regional sehr unterschiedlich: Manche Gegenden liefern Hunderte Termine, andere fast keine. Pro Anfrage werden höchstens 300 Einträge geladen; gibt es mehr, meldet die App „gekürzt“.
+
+**Bekannte öffentliche iCal-Feeds** (Abo-Adressen, die der Anbieter selbst zum Abonnieren anbietet): szene-Radar für Karlsruhe (`https://karlsruhe.szene-radar.de/ical/feed.ics`) und Freiburg (`https://freiburg.szene-radar.de/ical/feed.ics`), Konzerte und Clubabende.
+
+Eine einzige Quelle für „alle“ Veranstaltungen in Deutschland gibt es nicht. Weitere Möglichkeiten: Ticketmaster (eigener kostenloser Schlüssel) und der DZT Knowledge Graph (Schlüssel auf Antrag, noch nicht angebunden).
 
 Feed-Eintrag (`config/feeds.json`):
 

@@ -169,7 +169,7 @@ export function DiscoverView({ scope, home, radius, onRadiusChange, interests, n
 
           {status?.mode === 'live' && !hasIcs && scope === 'local' && (
             <p className="hint">
-              Märkte und Vereinsveranstaltungen erscheinen, sobald iCal-Kalender (z. B. von Stadt oder Vereinen) eingerichtet sind.
+              Vereins- und Stadtteilveranstaltungen erscheinen, sobald iCal-Kalender (z. B. von Stadt oder Vereinen) eingerichtet sind.
               Bis dahin stammen die Ergebnisse nur aus den aktiven Quellen.
             </p>
           )}

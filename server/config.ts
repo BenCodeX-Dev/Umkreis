@@ -1,11 +1,14 @@
 import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
+import { createDestinationOneProvider } from './providers/destinationone.ts';
 import { createIcsProvider, validateFeed, type FeedConfig } from './providers/ics.ts';
 import { createTicketmasterProvider } from './providers/ticketmaster.ts';
 import type { SourceMode } from '../shared/types.ts';
 import type { EventProvider, FetchFn } from './providers/types.ts';
 
 export interface ServerConfig {
+  /** destination.one open data (keyless). On unless DESTINATION_ONE=off. */
+  openData?: boolean;
   ticketmasterKey?: string;
   feeds: FeedConfig[];
   geocoderUrl: string;
@@ -38,6 +41,7 @@ export function loadServerConfig(env: Env, root = process.cwd()): ServerConfig {
     }
   }
   return {
+    openData: !/^(0|off|false|no|aus)$/i.test(env.DESTINATION_ONE?.trim() ?? ''),
     ticketmasterKey: env.TICKETMASTER_API_KEY?.trim() || undefined,
     feeds,
     geocoderUrl: env.GEOCODER_URL || 'https://nominatim.openstreetmap.org/search',
@@ -64,6 +68,7 @@ export function effectiveAllowedHosts(cfg: ServerConfig, host: string, port: num
 /** Real sources only. Without any, the app says so and shows no events – nothing is invented. */
 export function buildProviders(cfg: ServerConfig, fetchFn: FetchFn = fetch): { providers: EventProvider[]; mode: SourceMode } {
   const providers: EventProvider[] = [];
+  if (cfg.openData) providers.push(createDestinationOneProvider(fetchFn, cfg.appUserAgent));
   if (cfg.ticketmasterKey) providers.push(createTicketmasterProvider(cfg.ticketmasterKey, fetchFn));
   for (const feed of cfg.feeds) providers.push(createIcsProvider(feed, fetchFn));
   return { providers, mode: providers.length > 0 ? 'live' : 'unconfigured' };
