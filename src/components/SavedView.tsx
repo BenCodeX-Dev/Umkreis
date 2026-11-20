@@ -4,11 +4,11 @@ import { startOfLocalDay } from '../../shared/time.ts';
 import { isOver } from '../lib/dates.ts';
 import { groupByDay, rankEvents } from '../lib/filter.ts';
 import type { HomeLocation } from '../lib/location.ts';
-import type { CardActions } from './EventCard.tsx';
+import type { CardActions, ListContext } from './EventCard.tsx';
 import { EventList } from './EventList.tsx';
 import { EmptyState } from './StatusMessage.tsx';
 
-interface Props extends CardActions {
+interface Props extends CardActions, Pick<ListContext, 'openIn'> {
   saved: EventItem[];
   home?: HomeLocation;
   interests: CategoryId[];

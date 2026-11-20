@@ -50,3 +50,9 @@ export function mapTarget(e: EventItem): MapTarget | null {
     ],
   };
 }
+
+/** Puts the preferred app first. When it has no link for this place (HERE needs coordinates), the order stays. */
+export function preferLink(target: MapTarget, preferred: MapProvider): { primary: MapLink; others: MapLink[] } {
+  const primary = target.links.find((l) => l.provider === preferred) ?? target.links[0];
+  return { primary, others: target.links.filter((l) => l !== primary) };
+}

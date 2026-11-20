@@ -11,6 +11,10 @@ export interface ServerConfig {
   demoMode: 'auto' | 'on' | 'off';
   geocoderUrl: string;
   geocoderUserAgent: string;
+  /** Identifies Umkreis to third-party services (Panoramax); set APP_USER_AGENT to add contact details. */
+  appUserAgent: string;
+  /** When set, requests with any other Host header are refused (protects a local app from DNS rebinding). */
+  allowedHosts?: string[];
   warnings: string[];
 }
 
@@ -38,7 +42,9 @@ export function loadServerConfig(env: Env, root = process.cwd()): ServerConfig {
     feeds,
     demoMode: mode === 'on' || mode === 'off' ? mode : 'auto',
     geocoderUrl: env.GEOCODER_URL || 'https://nominatim.openstreetmap.org/search',
-    geocoderUserAgent: env.GEOCODER_USER_AGENT || 'Umkreis/0.1 (self-hosted local events app)',
+    geocoderUserAgent: env.GEOCODER_USER_AGENT || env.APP_USER_AGENT || 'Umkreis/0.2 (self-hosted local events app)',
+    appUserAgent: env.APP_USER_AGENT || 'Umkreis/0.2 (self-hosted local events app)',
+    allowedHosts: env.ALLOWED_HOSTS?.split(',').map((h) => h.trim().toLowerCase()).filter(Boolean) || undefined,
     warnings,
   };
 }

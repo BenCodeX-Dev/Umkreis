@@ -52,6 +52,11 @@ export interface EventItem {
   /** Label for `url`, e.g. "Originalanzeige" or "Veranstaltungskalender". */
   urlLabel?: string;
   status?: EventStatus;
+  /**
+   * When Umkreis last downloaded this entry from its source (ISO). It says nothing about when the
+   * organiser last changed it. Absent for demo entries, which are never checked against anything.
+   */
+  checkedAt?: string;
 }
 
 export interface SourceStatus {
@@ -61,6 +66,8 @@ export interface SourceStatus {
   ok: boolean;
   count: number;
   message?: string;
+  /** When this source was last downloaded successfully (ISO). */
+  checkedAt?: string;
 }
 
 export interface EventsResponse {

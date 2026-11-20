@@ -141,7 +141,7 @@ export function createTicketmasterProvider(apiKey: string, fetchFn: FetchFn = fe
       const list = obj(body?._embedded)?.events;
       const events = (Array.isArray(list) ? list : []).map(normalizeTicketmasterEvent).filter((x): x is EventItem => x !== null);
       const total = num(obj(body?.page)?.totalElements) ?? 0;
-      return { events, truncated: total > PAGE_SIZE };
+      return { events, truncated: total > PAGE_SIZE, checkedAt: new Date().toISOString() };
     },
   };
 }

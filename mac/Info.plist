@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>de</string>
+	<key>CFBundleExecutable</key>
+	<string>Umkreis</string>
+	<key>CFBundleIconFile</key>
+	<string>AppIcon</string>
+	<key>CFBundleIdentifier</key>
+	<string>io.github.bencodex-dev.umkreis</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundleName</key>
+	<string>Umkreis</string>
+	<key>CFBundleDisplayName</key>
+	<string>Umkreis</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>0.0.0</string>
+	<key>CFBundleVersion</key>
+	<string>0.0.0</string>
+	<key>LSApplicationCategoryType</key>
+	<string>public.app-category.lifestyle</string>
+	<key>LSMinimumSystemVersion</key>
+	<string>13.0</string>
+	<key>LSMultipleInstancesProhibited</key>
+	<true/>
+	<key>NSHighResolutionCapable</key>
+	<true/>
+	<key>NSSupportsAutomaticTermination</key>
+	<false/>
+	<key>NSHumanReadableCopyright</key>
+	<string>Veranstaltungsdaten gehören ihren Quellen. Karte © OpenStreetMap-Mitwirkende.</string>
+	<key>NSLocationUsageDescription</key>
+	<string>Umkreis fragt deinen Standort nur ab, wenn du „Meinen aktuellen Standort verwenden“ wählst, und rundet ihn auf etwa 1 km.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>Umkreis fragt deinen Standort nur ab, wenn du „Meinen aktuellen Standort verwenden“ wählst, und rundet ihn auf etwa 1 km.</string>
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsLocalNetworking</key>
+		<true/>
+	</dict>
+</dict>
+</plist>

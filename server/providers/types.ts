@@ -13,6 +13,8 @@ export interface ProviderResult {
   events: EventItem[];
   /** The source had more results than were fetched. */
   truncated?: boolean;
+  /** When the data was actually downloaded from the source (ISO). Caches keep the original time. */
+  checkedAt?: string;
 }
 
 export interface EventProvider {

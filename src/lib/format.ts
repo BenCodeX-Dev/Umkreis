@@ -1,4 +1,10 @@
-import type { PriceInfo } from '../../shared/types.ts';
+import type { EventStatus, PriceInfo } from '../../shared/types.ts';
+
+export const STATUS_LABEL: Record<EventStatus, string> = {
+  cancelled: 'Abgesagt',
+  postponed: 'Verschoben',
+  rescheduled: 'Neuer Termin',
+};
 
 export function formatDistance(km: number | undefined, approx?: boolean): string {
   if (km === undefined) return 'Entfernung unbekannt';

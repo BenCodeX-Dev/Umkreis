@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { isCategoryId } from '../shared/categories.ts';
 import type { CategoryId, EventItem, GeocodeResult } from '../shared/types.ts';
 import { DiscoverView } from './components/DiscoverView.tsx';
@@ -11,6 +11,8 @@ import { useHashRoute, useNotice, useNow, usePersistentState, useTheme, type Rou
 import { fetchStatus, sanitizeEvent, type ServerStatus } from './lib/api.ts';
 import { formatShortDate, formatTime, isOver } from './lib/dates.ts';
 import { isHomeLocation, type HomeLocation } from './lib/location.ts';
+import { defaultOpenIn, isInAppMapPref, isMapProvider, MAP_VIEW_KEY, OPEN_IN_KEY, OPEN_IN_OPTIONS, type InAppMap } from './lib/mapPrefs.ts';
+import type { MapProvider } from './lib/maps.ts';
 import { readStored, removeStored, writeStored } from './lib/storage.ts';
 import type { ThemePref } from './lib/theme.ts';
 
@@ -26,6 +28,11 @@ const NAV: Array<{ route: Route; label: string }> = [
   { route: 'nah', label: 'In der Nähe' },
   { route: 'deutschland', label: 'Deutschlandweit' },
   { route: 'gemerkt', label: 'Gemerkt' },
+];
+
+const MAP_VIEW_OPTIONS: { id: InAppMap; label: string }[] = [
+  { id: 'osm', label: 'OpenStreetMap' },
+  { id: 'off', label: 'Keine Karte' },
 ];
 
 const THEME_OPTIONS: { id: ThemePref; label: string }[] = [
@@ -51,6 +58,8 @@ export function App() {
   const [status, setStatus] = useState<ServerStatus | null>(null);
   const [notice, notify] = useNotice();
   const { pref: themePref, setPref: setThemePref, theme } = useTheme();
+  const [mapView, setMapView] = usePersistentState<InAppMap | null>(MAP_VIEW_KEY, null, isInAppMapPref);
+  const [openIn, setOpenIn] = usePersistentState<MapProvider>(OPEN_IN_KEY, defaultOpenIn(), isMapProvider);
 
   // The home location is only persisted after an explicit opt-in.
   useEffect(() => {
@@ -96,6 +105,19 @@ export function App() {
       notify('Gemerkt – zu finden unter „Gemerkt“.');
     }
   };
+  // Saved copies take over newer details (time, place, status, last check) whenever the event shows up in a search again.
+  const refreshSaved = useCallback(
+    (events: EventItem[]) =>
+      setSaved((s) => {
+        let next: Record<string, EventItem> | null = null;
+        for (const e of events) {
+          const old = s[e.id];
+          if (old && !e.isDemo && e.checkedAt && e.checkedAt !== old.checkedAt) (next ??= { ...s })[e.id] = e;
+        }
+        return next ?? s;
+      }),
+    [setSaved],
+  );
   const removePast = () => setSaved((s) => Object.fromEntries(Object.entries(s).filter(([, e]) => !isOver(e, now))));
 
   const onShare = async (e: EventItem) => {
@@ -125,6 +147,10 @@ export function App() {
     home,
     onEditLocation: () => setDialog('location'),
     onEditInterests: () => setDialog('interests'),
+    mapView,
+    onMapView: setMapView,
+    openIn,
+    onResults: refreshSaved,
   };
 
   return (
@@ -180,9 +206,9 @@ export function App() {
         </div>
       )}
 
-      <main id="main" className="container main" tabIndex={-1}>
+      <main id="main" className={`container main${route !== 'gemerkt' && (home || route === 'deutschland') ? ' is-wide' : ''}`} tabIndex={-1}>
         {route === 'gemerkt' ? (
-          <SavedView saved={savedList} home={home} interests={interests} now={now} onRemovePast={removePast} {...cardActions} />
+          <SavedView saved={savedList} home={home} interests={interests} now={now} onRemovePast={removePast} openIn={openIn} {...cardActions} />
         ) : route === 'deutschland' ? (
           <DiscoverView key="de" scope="de" {...common} />
         ) : home ? (
@@ -205,6 +231,32 @@ export function App() {
               ))}
             </div>
           </fieldset>
+          <fieldset className="theme-choice">
+            <legend>Karte in der App</legend>
+            <div className="segmented">
+              {MAP_VIEW_OPTIONS.map((o) => (
+                <label key={o.id} className="segment">
+                  <input type="radio" name="mapview" checked={(mapView ?? 'off') === o.id} onChange={() => setMapView(o.id)} />
+                  <span>{o.label}</span>
+                </label>
+              ))}
+            </div>
+            <p className="hint">
+              Apple Maps (MapKit JS) bräuchte ein kostenpflichtiges Apple-Entwicklerkonto samt Token, Google Maps einen
+              API-Schlüssel mit Abrechnung – beides ist hier nicht eingerichtet.
+            </p>
+          </fieldset>
+          <fieldset className="theme-choice">
+            <legend>Orte öffnen in</legend>
+            <div className="segmented">
+              {OPEN_IN_OPTIONS.map((o) => (
+                <label key={o.id} className="segment">
+                  <input type="radio" name="openin" checked={openIn === o.id} onChange={() => setOpenIn(o.id)} />
+                  <span>{o.label}</span>
+                </label>
+              ))}
+            </div>
+          </fieldset>
           <p>
             <strong>Datenquellen:</strong>{' '}
             {status
@@ -215,13 +267,16 @@ export function App() {
           <p>
             Ortssuche: Daten ©{' '}
             <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">OpenStreetMap-Mitwirkende</a>{' '}
-            (ODbL), über Nominatim.
+            (ODbL), über Nominatim. Karte: Kacheln der OpenStreetMap Foundation. Straßenbilder: Panoramax
+            (Lizenz je Bild, meist CC BY-SA 4.0).
           </p>
           <p>
             <strong>Datenschutz:</strong> Kein Tracking, keine Analyse, keine externen Schriften. Standorte werden auf ca. 1 km gerundet,
             nur im Hintergrund an den eigenen Server übermittelt und nur nach deiner Zustimmung lokal gespeichert. Interessen,
             gemerkte Veranstaltungen und die Darstellung bleiben in diesem Browser. Kartenlinks übergeben dem gewählten Kartendienst
-            nur den Veranstaltungsort, nie deinen Standort.
+            nur den Veranstaltungsort, nie deinen Standort. Die Karte lädt erst nach deiner Zustimmung Kacheln von
+            tile.openstreetmap.org – dabei sehen deren Server deine IP-Adresse und den Kartenausschnitt. Straßenbilder werden nur
+            auf Knopfdruck über den eigenen Server bei Panoramax gesucht, mit der Position des Veranstaltungsorts.
           </p>
         </div>
       </footer>

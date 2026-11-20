@@ -1,16 +1,22 @@
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { CITIES } from '../../shared/cities.ts';
-import type { CategoryId, EventsRequest, GeocodeResult } from '../../shared/types.ts';
+import type { CategoryId, EventItem, EventsRequest, GeocodeResult } from '../../shared/types.ts';
 import { navigateTo, useDebouncedValue } from '../hooks/hooks.ts';
 import { useEvents } from '../hooks/useEvents.ts';
 import type { ServerStatus } from '../lib/api.ts';
 import { RANGES, rangeWindow, type RangeId } from '../lib/dates.ts';
 import { groupByDay, rankEvents } from '../lib/filter.ts';
 import type { HomeLocation } from '../lib/location.ts';
+import type { InAppMap } from '../lib/mapPrefs.ts';
+import type { MapProvider } from '../lib/maps.ts';
+import { findConflicts } from '../lib/quality.ts';
+import { spotKey } from '../lib/spots.ts';
+import { EventDetail } from './EventDetail.tsx';
 import type { CardActions } from './EventCard.tsx';
 import { EventList } from './EventList.tsx';
 import { FilterBar, RadiusControl, type Filters } from './FilterBar.tsx';
 import { Icon } from './Icon.tsx';
+import { MapPanel } from './MapPanel.tsx';
 import { EmptyState, ErrorState, LoadingState, type Suggestion } from './StatusMessage.tsx';
 
 const CITY_RADIUS_KM = 25;
@@ -25,9 +31,18 @@ interface Props extends CardActions {
   status: ServerStatus | null;
   onEditLocation: () => void;
   onEditInterests: () => void;
+  mapView: InAppMap | null;
+  onMapView: (v: InAppMap) => void;
+  openIn: MapProvider;
+  /** Fresh results, so saved copies of the same events can be updated. */
+  onResults?: (events: EventItem[]) => void;
 }
 
-export function DiscoverView({ scope, home, radius, onRadiusChange, interests, now, status, onEditLocation, onEditInterests, ...actions }: Props) {
+const reducedMotion = () => typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
+const cardSelector = (id: string) => `[data-event-id="${CSS.escape(id)}"]`;
+
+export function DiscoverView({ scope, home, radius, onRadiusChange, interests, now, status, onEditLocation, onEditInterests, mapView, onMapView, openIn, onResults, ...actions }: Props) {
+  const [selected, setSelected] = useState<{ id: string; token: number } | null>(null);
   const [filters, setFilters] = useState<Filters>({ range: scope === 'local' ? 'heute' : '7tage', categories: [], text: '', sort: 'zeit' });
   const [city, setCity] = useState<GeocodeResult | null>(null);
   const patch = (p: Partial<Filters>) => setFilters((f) => ({ ...f, ...p }));
@@ -50,6 +65,10 @@ export function DiscoverView({ scope, home, radius, onRadiusChange, interests, n
 
   const { loading, data, previous, error, retry } = useEvents(req);
   const shown = data ?? (loading ? previous : undefined);
+  useEffect(() => {
+    if (data) onResults?.(data.events);
+  }, [data]); // eslint-disable-line react-hooks/exhaustive-deps
+  const conflicts = useMemo(() => findConflicts(shown?.events ?? []), [shown]);
 
   const origin = scope === 'local' ? home : (home ?? city ?? undefined);
   const distanceSuffix = home ? 'entfernt' : city && scope === 'de' ? `von ${city.label}` : undefined;
@@ -58,6 +77,26 @@ export function DiscoverView({ scope, home, radius, onRadiusChange, interests, n
     ? rankEvents(shown.events, { categories: filters.categories, text: filters.text, sort, interests, home: origin, now, windowFrom: win.from })
     : [];
   const groups = groupByDay(ranked, sort, win.from);
+  const idsKey = ranked.map((r) => r.event.id).join('|');
+  const mapEvents = useMemo(() => ranked.map((r) => r.event), [idsKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  const selItem = selected ? ranked.find((r) => r.event.id === selected.id) : undefined;
+  const sameSpot = selItem?.event.location
+    ? ranked.map((r) => r.event).filter((o) => o.id !== selItem.event.id && o.location && spotKey(o.location) === spotKey(selItem.event.location!))
+    : [];
+  const mapCenter = scope === 'local' ? home : (city ?? undefined);
+  const mapRadius = scope === 'local' ? debRadius : city ? CITY_RADIUS_KM : undefined;
+
+  const select = (id: string, from: 'list' | 'map') => {
+    setSelected((s) => ({ id, token: (s?.token ?? 0) + 1 }));
+    if (from === 'map') {
+      requestAnimationFrame(() => document.querySelector(cardSelector(id))?.scrollIntoView({ block: 'nearest', behavior: reducedMotion() ? 'auto' : 'smooth' }));
+    }
+  };
+  const closeDetail = () => {
+    const id = selected?.id;
+    setSelected(null);
+    if (id) requestAnimationFrame(() => document.querySelector<HTMLElement>(`${cardSelector(id)} .card-title-btn`)?.focus());
+  };
 
   const phrase = RANGES.find((r) => r.id === filters.range)?.phrase ?? '';
   const where =
@@ -99,7 +138,7 @@ export function DiscoverView({ scope, home, radius, onRadiusChange, interests, n
         </div>
       </header>
 
-      <div className="layout">
+      <div className="layout has-map">
         <div className="controls">
           {scope === 'local' && <RadiusControl value={radius} onChange={onRadiusChange} />}
 
@@ -166,11 +205,48 @@ export function DiscoverView({ scope, home, radius, onRadiusChange, interests, n
                   suggestions={suggestions}
                 />
               ) : (
-                <EventList groups={groups} now={now} distanceSuffix={distanceSuffix} busy={loading} {...actions} />
+                <EventList
+                  groups={groups}
+                  now={now}
+                  distanceSuffix={distanceSuffix}
+                  busy={loading}
+                  selectedId={selItem?.event.id}
+                  onSelect={select}
+                  conflicts={conflicts}
+                  openIn={openIn}
+                  {...actions}
+                />
               )}
             </>
           )}
         </div>
+
+        <aside className="mapcol" aria-label="Karte und Details">
+          <MapPanel
+            pref={mapView}
+            onPref={onMapView}
+            events={mapEvents}
+            center={mapCenter}
+            radiusKm={mapRadius}
+            selectedId={selItem?.event.id}
+            onSelect={select}
+            fitKey={req ? JSON.stringify([req.scope, req.lat, req.lon, req.radiusKm, req.from, req.to]) : 'none'}
+          />
+          {selItem && (
+            <EventDetail
+              item={selItem}
+              distanceSuffix={distanceSuffix}
+              now={now}
+              conflicts={conflicts.get(selItem.event.id)}
+              sameSpot={sameSpot}
+              openIn={openIn}
+              onSelect={(id) => select(id, 'list')}
+              onClose={closeDetail}
+              focusToken={selected!.token}
+              {...actions}
+            />
+          )}
+        </aside>
       </div>
     </section>
   );

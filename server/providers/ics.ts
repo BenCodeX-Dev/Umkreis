@@ -94,9 +94,9 @@ export function icsEventToItems(feed: FeedConfig, ev: IcsEvent, from: Date, to: 
 }
 
 export function createIcsProvider(feed: FeedConfig, fetchFn: FetchFn = fetch, ttlMs = 15 * 60_000): EventProvider {
-  const cache = new TtlCache<IcsEvent[]>(ttlMs, 1);
+  const cache = new TtlCache<{ events: IcsEvent[]; checkedAt: string }>(ttlMs, 1);
   const tooLarge = () => new ProviderError(`${feed.name}: Kalenderdatei ist zu groß.`);
-  async function load(): Promise<IcsEvent[]> {
+  async function load(): Promise<{ events: IcsEvent[]; checkedAt: string }> {
     const hit = cache.get('feed');
     if (hit) return hit;
     let res: Response;
@@ -113,9 +113,9 @@ export function createIcsProvider(feed: FeedConfig, fetchFn: FetchFn = fetch, tt
       throw err instanceof TooLarge ? tooLarge() : new ProviderError(`${feed.name} ist gerade nicht erreichbar.`);
     }
     if (!/BEGIN:VCALENDAR/i.test(text)) throw new ProviderError(`${feed.name} liefert keinen gültigen iCal-Kalender.`);
-    const events = parseIcs(text);
-    cache.set('feed', events);
-    return events;
+    const loaded = { events: parseIcs(text), checkedAt: new Date().toISOString() };
+    cache.set('feed', loaded);
+    return loaded;
   }
 
   return {
@@ -123,10 +123,10 @@ export function createIcsProvider(feed: FeedConfig, fetchFn: FetchFn = fetch, tt
     name: feed.name,
     kind: 'ics',
     async fetchEvents(q) {
-      const events = await load();
+      const { events, checkedAt } = await load();
       const budget: ExpandBudget = { steps: MAX_STEPS_PER_REQUEST };
       const items = events.flatMap((ev) => icsEventToItems(feed, ev, q.from, q.to, budget));
-      return { events: items, truncated: budget.exhausted || events.length >= MAX_EVENTS || undefined };
+      return { events: items, truncated: budget.exhausted || events.length >= MAX_EVENTS || undefined, checkedAt };
     },
   };
 }

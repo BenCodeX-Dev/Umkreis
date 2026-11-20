@@ -14,9 +14,20 @@ const serveStatic = createStaticHandler(path.join(root, 'dist'));
 const port = Number(process.env.PORT) || 8787;
 const host = process.env.HOST || '127.0.0.1';
 
+// The macOS app keeps our stdin open; when the app quits or crashes the pipe closes and the server follows.
+if (process.env.EXIT_ON_STDIN_CLOSE === '1') {
+  process.stdin.on('end', () => process.exit(0));
+  process.stdin.on('error', () => process.exit(0));
+  process.stdin.resume();
+}
+
 http
   .createServer((req, res) => {
     const started = Date.now();
+    if (config.allowedHosts && !config.allowedHosts.includes((req.headers.host ?? '').toLowerCase())) {
+      res.writeHead(421, { 'Content-Type': 'text/plain; charset=utf-8' }).end('Unbekannter Host.');
+      return;
+    }
     // Log only method, path and status — never query strings or bodies (they may carry location data).
     res.on('finish', () => {
       const p = (req.url ?? '/').split('?')[0];

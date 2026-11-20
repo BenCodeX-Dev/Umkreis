@@ -80,3 +80,8 @@ export function formatUntil(e: EventItem): string | undefined {
   if (endKey === localDayKey(new Date(e.start))) return e.timeKnown ? `bis ${timeFmt.format(new Date(e.end))}` : undefined;
   return `bis ${formatShortDate(new Date(Date.parse(e.end) - 1).toISOString())}`;
 }
+
+/** "Samstag, 21. November" in German time. */
+export function formatLongDate(iso: string): string {
+  return dayFmt.format(new Date(iso));
+}

@@ -5,7 +5,10 @@ import { buildIcs } from '../src/lib/calendar.ts';
 import { formatDayHeading, isOver, rangeWindow } from '../src/lib/dates.ts';
 import { groupByDay, rankEvents } from '../src/lib/filter.ts';
 import { formatDistance, formatPrice } from '../src/lib/format.ts';
-import { mapTarget } from '../src/lib/maps.ts';
+import { mapTarget, preferLink } from '../src/lib/maps.ts';
+import { defaultOpenIn } from '../src/lib/mapPrefs.ts';
+import { groupSpots } from '../src/lib/spots.ts';
+import { findConflicts, formatCheckedAt, freshness, missingDetails } from '../src/lib/quality.ts';
 import { applyThemePref, isThemePref, loadThemePref, resolveTheme } from '../src/lib/theme.ts';
 
 const ev = (over: Partial<EventItem> = {}): EventItem => ({
@@ -181,5 +184,67 @@ describe('theme', () => {
     expect(root.dataset.theme).toBe('night');
     applyThemePref('auto', root);
     expect(root.dataset.theme).toBeUndefined();
+  });
+});
+
+describe('quality flags', () => {
+  const now = new Date('2026-11-20T15:00:00Z');
+  it('reports when an entry was last checked and flags stale ones', () => {
+    expect(freshness(ev({ isDemo: true, checkedAt: now.toISOString() }), now)).toEqual({ kind: 'demo' });
+    expect(freshness(ev(), now)).toEqual({ kind: 'unknown' });
+    const f = freshness(ev({ checkedAt: '2026-11-19T14:00:00Z' }), now);
+    expect(f.kind === 'checked' && f.stale).toBe(true);
+    const g = freshness(ev({ checkedAt: '2026-11-20T14:00:00Z' }), now);
+    expect(g.kind === 'checked' && g.stale).toBe(false);
+  });
+  it('formats the check time in German local time', () => {
+    expect(formatCheckedAt(new Date('2026-11-20T14:59:40Z'), now)).toBe('gerade eben');
+    expect(formatCheckedAt(new Date('2026-11-20T14:48:00Z'), now)).toBe('vor 12 Min.');
+    expect(formatCheckedAt(new Date('2026-11-20T08:05:00Z'), now)).toBe('heute, 09:05 Uhr');
+    expect(formatCheckedAt(new Date('2026-11-19T20:30:00Z'), now)).toBe('gestern, 21:30 Uhr');
+    expect(formatCheckedAt(new Date('2026-11-17T12:00:00Z'), now)).toBe('17. November, 13:00 Uhr');
+  });
+  it('lists details the source left out, never for demo entries', () => {
+    expect(missingDetails(ev({ timeKnown: false }))).toEqual(['Uhrzeit', 'Ort', 'Kartenposition', 'Originalanzeige']);
+    expect(missingDetails(ev({ venue: 'Halle', location: { lat: 49.8, lon: 8.6 }, locationApprox: true, url: 'https://a.org' }))).toEqual(['genaue Kartenposition']);
+    expect(missingDetails(ev({ timeKnown: false, allDay: true, venue: 'Halle', location: { lat: 49.8, lon: 8.6 }, url: 'https://a.org' }))).toEqual([]);
+    expect(missingDetails(ev({ isDemo: true }))).toEqual([]);
+  });
+  it('flags listings of the same event whose sources disagree', () => {
+    const a = ev({ id: 'a', source: 'tm', sourceName: 'Ticketmaster', venue: 'Centralstation', start: '2026-11-21T19:00:00.000Z' });
+    const b = ev({ id: 'b', source: 'ics:stadt', sourceName: 'Stadtkalender', venue: 'Centralstation', start: '2026-11-21T19:30:00.000Z' });
+    const c = ev({ id: 'c', source: 'ics:verein', sourceName: 'Verein', title: 'KONZERT!', venue: 'Orangerie', start: '2026-11-21T19:00:00.000Z', status: 'cancelled' });
+    const other = ev({ id: 'd', source: 'ics:x', sourceName: 'X', title: 'Anderes', start: '2026-11-21T19:00:00.000Z' });
+    const m = findConflicts([a, b, c, other]);
+    expect(m.get('a')).toEqual(['Stadtkalender nennt 20:30 Uhr', 'Verein nennt als Ort „Orangerie“', 'Verein meldet sie als abgesagt']);
+    expect(m.get('c')).toEqual(['Ticketmaster nennt als Ort „Centralstation“', 'Ticketmaster führt sie nicht als abgesagt', 'Stadtkalender nennt 20:30 Uhr', 'Stadtkalender nennt als Ort „Centralstation“', 'Stadtkalender führt sie nicht als abgesagt']);
+    expect(m.has('d')).toBe(false);
+    expect(findConflicts([a, { ...a, id: 'a2' }]).size).toBe(0);
+    expect(findConflicts([a, { ...b, isDemo: true }]).size).toBe(0);
+  });
+});
+
+describe('map provider choice and pins', () => {
+  it('puts the chosen app first and falls back when it has no link', () => {
+    const exact = mapTarget(ev({ venue: 'Centralstation', location: { lat: 49.8728, lon: 8.6512 } }))!;
+    expect(preferLink(exact, 'here').primary.provider).toBe('here');
+    expect(preferLink(exact, 'here').others.map((l) => l.provider)).toEqual(['apple', 'google', 'osm']);
+    const byAddress = mapTarget(ev({ venue: 'Stadthalle', area: 'Bensheim' }))!;
+    expect(preferLink(byAddress, 'here').primary.provider).toBe('apple');
+  });
+  it('defaults to Apple Maps only on Apple devices', () => {
+    expect(defaultOpenIn('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)')).toBe('apple');
+    expect(defaultOpenIn('Mozilla/5.0 (Windows NT 10.0; Win64; x64)')).toBe('google');
+  });
+  it('groups events at the same venue into one pin and keeps flags', () => {
+    const at = { lat: 49.87283, lon: 8.65119 };
+    const spots = groupSpots([
+      ev({ id: 'a', location: at }),
+      ev({ id: 'b', location: { lat: 49.872831, lon: 8.651191 } }),
+      ev({ id: 'c', location: { lat: 49.9, lon: 8.7 }, locationApprox: true }),
+      ev({ id: 'd' }),
+    ]);
+    expect(spots.map((s) => s.events.map((e) => e.id))).toEqual([['a', 'b'], ['c']]);
+    expect(spots[1].approx).toBe(true);
   });
 });

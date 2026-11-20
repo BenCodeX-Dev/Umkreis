@@ -17,6 +17,7 @@ export function overlapsWindow(e: EventItem, from: Date, to: Date): boolean {
 }
 
 const dedupeKey = (e: EventItem) => `${normalizeForSearch(e.title).replace(/\W+/g, '')}|${e.start.slice(0, 16)}`;
+const venueKey = (e: EventItem) => (e.venue ? normalizeForSearch(e.venue).replace(/\W+/g, '') : '');
 
 /** Queries all providers in parallel, tolerating partial failure, then filters, de-duplicates and sorts. */
 export function createEventService(providers: EventProvider[], mode: 'live' | 'demo', cacheTtlMs = 5 * 60_000) {
@@ -36,7 +37,8 @@ export function createEventService(providers: EventProvider[], mode: 'live' | 'd
     const sources: SourceStatus[] = [];
     let truncated = false;
     const seenIds = new Set<string>();
-    const seenKeys = new Set<string>();
+    /** dedupe key → venue keys already listed under it */
+    const seenKeys = new Map<string, string[]>();
     const needle = q.text ? normalizeForSearch(q.text) : '';
     const events: EventItem[] = [];
 
@@ -56,14 +58,19 @@ export function createEventService(providers: EventProvider[], mode: 'live' | 'd
           if (!e.location || distanceKm(q.center, e.location) > q.radiusKm) continue;
         }
         if (needle && !normalizeForSearch(`${e.title} ${e.venue ?? ''} ${e.area ?? ''} ${e.description ?? ''}`).includes(needle)) continue;
+        if (seenIds.has(e.id)) continue;
+        // Same title and start from two sources is one event – unless both name different venues.
+        // Then both stay, so the client can flag the conflict instead of silently picking one.
         const k = dedupeKey(e);
-        if (seenIds.has(e.id) || seenKeys.has(k)) continue;
+        const v = venueKey(e);
+        const venues = seenKeys.get(k);
+        if (venues && (!v || venues.includes(v) || venues.includes(''))) continue;
         seenIds.add(e.id);
-        seenKeys.add(k);
-        events.push(e);
+        seenKeys.set(k, [...(venues ?? []), v]);
+        events.push(r.value.checkedAt && !e.checkedAt ? { ...e, checkedAt: r.value.checkedAt } : e);
         count++;
       }
-      sources.push({ id: p.id, name: p.name, kind: p.kind, ok: true, count });
+      sources.push({ id: p.id, name: p.name, kind: p.kind, ok: true, count, checkedAt: r.value.checkedAt });
     });
 
     events.sort((a, b) => a.start.localeCompare(b.start) || a.title.localeCompare(b.title, 'de'));

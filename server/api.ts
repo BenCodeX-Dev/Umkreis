@@ -3,6 +3,7 @@ import { coarsen, isInGermanyBounds } from '../shared/geo.ts';
 import { buildProviders, type ServerConfig } from './config.ts';
 import { createEventService } from './events.ts';
 import { createGeocoder } from './geocode.ts';
+import { createStreetLevel, StreetLevelError } from './streetlevel.ts';
 import type { FetchFn, ProviderQuery } from './providers/types.ts';
 
 const DAY_MS = 86_400_000;
@@ -65,6 +66,7 @@ export function createApiHandler(cfg: ServerConfig, fetchFn: FetchFn = fetch) {
   const { providers, mode } = buildProviders(cfg, fetchFn);
   const collect = createEventService(providers, mode);
   const geocode = createGeocoder(cfg.geocoderUrl, cfg.geocoderUserAgent, fetchFn);
+  const streetLevel = createStreetLevel(cfg.appUserAgent, fetchFn);
 
   return async function handle(req: IncomingMessage, res: ServerResponse): Promise<boolean> {
     const pathname = new URL(req.url ?? '/', 'http://localhost').pathname;
@@ -74,7 +76,18 @@ export function createApiHandler(cfg: ServerConfig, fetchFn: FetchFn = fetch) {
       send(res, 200, { mode, sources: providers.map((p) => ({ id: p.id, name: p.name, kind: p.kind })) });
       return true;
     }
-    if (pathname !== '/api/events' && pathname !== '/api/geocode') {
+    const thumbId = /^\/api\/streetlevel\/thumb\/([0-9a-f-]{36})$/i.exec(pathname)?.[1];
+    if (thumbId && req.method === 'GET') {
+      const img = await streetLevel.thumb(thumbId);
+      if (!img) {
+        send(res, 404, { error: 'Bild nicht verfügbar.' });
+        return true;
+      }
+      res.writeHead(200, { 'Content-Type': img.type, 'Cache-Control': 'private, max-age=86400', 'X-Content-Type-Options': 'nosniff' });
+      res.end(img.body);
+      return true;
+    }
+    if (pathname !== '/api/events' && pathname !== '/api/geocode' && pathname !== '/api/streetlevel') {
       send(res, 404, { error: 'Nicht gefunden.' });
       return true;
     }
@@ -91,6 +104,16 @@ export function createApiHandler(cfg: ServerConfig, fetchFn: FetchFn = fetch) {
       body = await readJson(req);
     } catch {
       send(res, 400, { error: 'Ungültige Anfrage.' });
+      return true;
+    }
+
+    if (pathname === '/api/streetlevel') {
+      try {
+        send(res, 200, await streetLevel.lookup(body));
+      } catch (err) {
+        if (!(err instanceof StreetLevelError)) throw err;
+        send(res, /Ungültig|außerhalb/.test(err.message) ? 400 : 502, { error: err.message });
+      }
       return true;
     }
 

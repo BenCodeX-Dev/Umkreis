@@ -1,10 +1,9 @@
 import { formatDayHeading } from '../lib/dates.ts';
 import type { DayGroup } from '../lib/filter.ts';
-import { EventCard, type CardActions } from './EventCard.tsx';
+import { EventCard, type CardActions, type ListContext } from './EventCard.tsx';
 
-interface Props extends CardActions {
+interface Props extends CardActions, ListContext {
   groups: DayGroup[];
-  now: Date;
   distanceSuffix?: string;
   busy?: boolean;
 }
@@ -18,7 +17,7 @@ export function EventList({ groups, now, distanceSuffix, busy, ...actions }: Pro
           <ul className="cards">
             {g.items.map((it) => (
               <li key={it.event.id}>
-                <EventCard item={it} dayKey={g.dayKey} distanceSuffix={distanceSuffix} {...actions} />
+                <EventCard item={it} dayKey={g.dayKey} distanceSuffix={distanceSuffix} now={now} {...actions} />
               </li>
             ))}
           </ul>

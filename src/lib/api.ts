@@ -42,6 +42,7 @@ export function sanitizeEvent(raw: unknown): EventItem | null {
     url: safeHttpUrl(e.url),
     urlLabel: opt(e.urlLabel),
     status: e.status === 'cancelled' || e.status === 'postponed' || e.status === 'rescheduled' ? e.status : undefined,
+    checkedAt: isStr(e.checkedAt) && !Number.isNaN(Date.parse(e.checkedAt)) && !e.isDemo ? e.checkedAt : undefined,
   };
 }
 
@@ -102,4 +103,41 @@ export async function fetchStatus(signal?: AbortSignal): Promise<ServerStatus | 
   } catch {
     return null;
   }
+}
+
+export interface StreetLevelPicture {
+  id: string;
+  takenAt?: string;
+  producer?: string;
+  license: string;
+  licenseUrl?: string;
+  viewerUrl: string;
+  thumbPath: string;
+}
+export type StreetLevel = { available: true; radiusM: number; picture: StreetLevelPicture } | { available: false; radiusM: number };
+
+/** Asks the server whether Panoramax has street-level pictures near a venue. */
+export async function fetchStreetLevel(point: { lat: number; lon: number }, signal?: AbortSignal): Promise<StreetLevel> {
+  const d = (await postJson('/api/streetlevel', { lat: point.lat, lon: point.lon }, signal)) as Record<string, unknown>;
+  const radiusM = typeof d?.radiusM === 'number' ? d.radiusM : 50;
+  const p = d?.picture as Record<string, unknown> | undefined;
+  if (d?.available === true && p && isStr(p.id) && isStr(p.viewerUrl) && isStr(p.thumbPath) && isStr(p.license)) {
+    const viewerUrl = safeHttpUrl(p.viewerUrl);
+    if (viewerUrl && p.thumbPath.startsWith('/api/streetlevel/thumb/')) {
+      return {
+        available: true,
+        radiusM,
+        picture: {
+          id: p.id,
+          takenAt: isStr(p.takenAt) && !Number.isNaN(Date.parse(p.takenAt)) ? p.takenAt : undefined,
+          producer: isStr(p.producer) ? p.producer : undefined,
+          license: p.license,
+          licenseUrl: safeHttpUrl(p.licenseUrl),
+          viewerUrl,
+          thumbPath: p.thumbPath,
+        },
+      };
+    }
+  }
+  return { available: false, radiusM };
 }

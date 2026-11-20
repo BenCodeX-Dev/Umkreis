@@ -5,3 +5,4 @@ config/feeds.json
 *.tsbuildinfo
 .claude/
 .DS_Store
+build
