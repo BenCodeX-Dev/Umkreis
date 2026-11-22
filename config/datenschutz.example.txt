@@ -37,6 +37,16 @@ Links zu anderen Diensten
 „Öffnen in …“, Originalanzeigen und Teilen sind normale Links. Erst beim Anklicken erfährt der
 jeweilige Dienst den Veranstaltungsort und deine IP-Adresse; dort gilt dessen Datenschutzerklärung.
 
+Kalender verbinden (für Veranstalter)
+Wer einen Kalender anmeldet, gibt Kalenderadresse, Veranstaltername, Ort und optional die Art der
+Veranstaltungen an. Dieser Server speichert diese Angaben mit Bestätigungscode, Status und Zeitpunkten
+sowie einen Prüfwert (SHA-256) des Verwaltungsschlüssels, keine E-Mail- und keine IP-Adresse. Der
+Schlüssel selbst bleibt im Browser des Veranstalters. Der Server ruft die Kalenderadresse regelmäßig
+ab und zeigt die Termine mit Link zur Seite des Veranstalters. Unbestätigte Anmeldungen werden nach
+48 Stunden gelöscht, beendete Verbindungen sofort.
+Rechtsgrundlage: [z. B. Art. 6 Abs. 1 lit. b oder f DSGVO – prüfen]
+[Falls Anmeldungen von Hand freigeschaltet werden: wer das tut]
+
 Speicherung in deinem Browser
 Interessen, gemerkte Veranstaltungen, Darstellung, Karten-Einstellung und – nur wenn du es wählst –
 dein gerundeter Standort liegen im lokalen Speicher (localStorage) deines Browsers. Sie werden nicht
