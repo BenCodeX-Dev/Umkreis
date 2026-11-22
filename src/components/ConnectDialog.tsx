@@ -210,7 +210,8 @@ function CodeSteps({ source }: { source: ConnectedSource }) {
         </p>
       ) : (
         <p className="hint">
-          Trag diesen Code in die Beschreibung des Kalenders ein – oder in die Beschreibung eines Termins, der im Kalender bleibt.
+          Trag diesen Code in die Beschreibung des Kalenders ein (bei Google Kalender: Einstellungen des Kalenders → Beschreibung).
+          Ein Code bei einem einzelnen Termin zählt nicht, weil manche Kalender Termine von allen annehmen.
           Kalenderdienste aktualisieren ihre Datei oft erst nach einigen Minuten bis Stunden; danach „Jetzt prüfen“.
         </p>
       )}

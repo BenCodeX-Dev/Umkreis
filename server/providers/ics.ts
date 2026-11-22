@@ -62,7 +62,7 @@ export function plausibleGeo(feed: FeedConfig, geo: GeoPoint | undefined): GeoPo
 
 const MAX_BYTES = 5 * 1024 * 1024;
 /** Recurrence day steps per feed and request – generous for real calendars, bounded for broken ones. */
-const MAX_STEPS_PER_REQUEST = 500_000;
+export const MAX_STEPS_PER_REQUEST = 500_000;
 
 export { readTextCapped } from './download.ts';
 

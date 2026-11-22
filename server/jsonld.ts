@@ -52,12 +52,25 @@ function parseLenient(text: string): unknown {
   }
 }
 
+/** Scripts looked at per page, ld+json or not. */
+const MAX_SCRIPTS = 2000;
+
 /** The parsed contents of every `<script type="application/ld+json">` block (unparseable ones are skipped). */
 export function jsonLdBlocks(html: string): unknown[] {
   const out: unknown[] = [];
-  const re = /<script\b[^>]*\btype\s*=\s*["']?application\/ld\+json["']?[^>]*>([\s\S]*?)<\/script\s*>/gi;
-  for (let m = re.exec(html); m && out.length < MAX_BLOCKS; m = re.exec(html)) {
-    const parsed = parseLenient(m[1]);
+  // A linear scan instead of one large pattern: a crafted page must not be able to stall the server.
+  const open = /<script\b/gi;
+  const close = /<\/script\s*>/gi;
+  for (let m = open.exec(html), seen = 0; m && out.length < MAX_BLOCKS && seen < MAX_SCRIPTS; m = open.exec(html), seen++) {
+    const gt = html.indexOf('>', m.index);
+    if (gt < 0) break;
+    close.lastIndex = gt;
+    const end = close.exec(html);
+    if (!end) break;
+    open.lastIndex = close.lastIndex;
+    const tag = html.slice(m.index, gt + 1);
+    if (tag.length > 2000 || !/\btype\s*=\s*["']?application\/ld\+json\b/i.test(tag)) continue;
+    const parsed = parseLenient(html.slice(gt + 1, end.index));
     if (parsed !== undefined) out.push(parsed);
   }
   return out;

@@ -26,10 +26,16 @@ describe('verification code', () => {
     expect(a).not.toBe(b);
   });
 
-  it('finds the code in an iCal file, also when the line is folded', () => {
+  it('finds the code in the calendar description, also when the line is folded', () => {
     expect(hasVerificationCode(`BEGIN:VCALENDAR\r\nX-WR-CALDESC:Freigabe ${CODE}\r\nEND:VCALENDAR`, 'ics', CODE)).toBe(true);
-    expect(hasVerificationCode(`X-WR-CALDESC:Freigabe umkreis-abcdefghij\r\n kmnpqrstuv`, 'ics', CODE)).toBe(true);
+    expect(hasVerificationCode(`BEGIN:VCALENDAR\r\nX-WR-CALDESC:Freigabe umkreis-abcdefghij\r\n kmnpqrstuv\r\nEND:VCALENDAR`, 'ics', CODE)).toBe(true);
     expect(hasVerificationCode('BEGIN:VCALENDAR', 'ics', CODE)).toBe(false);
+  });
+
+  it('ignores the code in single entries – some calendars take entries from anyone', () => {
+    const entry = `BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nSUMMARY:Fest\r\nDESCRIPTION:${CODE}\r\nBEGIN:VALARM\r\nDESCRIPTION:${CODE}\r\nEND:VALARM\r\nEND:VEVENT\r\nEND:VCALENDAR`;
+    expect(hasVerificationCode(entry, 'ics', CODE)).toBe(false);
+    expect(hasVerificationCode(`X-WR-CALDESC:${CODE}`, 'ics', CODE)).toBe(false);
   });
 
   it('accepts the code on a web page only in its meta tag', () => {
@@ -40,6 +46,27 @@ describe('verification code', () => {
     expect(hasVerificationCode(`<p>Kommentar: ${CODE}</p>`, 'web', CODE)).toBe(false);
     expect(hasVerificationCode(`<meta name="description" content="${CODE}">`, 'web', CODE)).toBe(false);
     expect(hasVerificationCode(`<meta name="umkreis-verification" content="${CODE}">`, 'web', 'nicht-gueltig')).toBe(false);
+  });
+
+  it('counts only real meta elements in the head', () => {
+    const tag = meta(CODE);
+    expect(hasVerificationCode(`<html><head><title>T</title>${tag}</head><body></body></html>`, 'web', CODE)).toBe(true);
+    // Text a visitor could get onto the page: comments, embedded data, form fields, or anywhere in the body.
+    expect(hasVerificationCode(`<head><!-- ${tag} --></head>`, 'web', CODE)).toBe(false);
+    expect(hasVerificationCode(`<head><script>var c = '${tag}';</script></head>`, 'web', CODE)).toBe(false);
+    expect(hasVerificationCode(`<head><SCRIPT type="application/json">["${tag}"]</SCRIPT></head>`, 'web', CODE)).toBe(false);
+    expect(hasVerificationCode(`<head><title>${tag}</title></head>`, 'web', CODE)).toBe(false);
+    expect(hasVerificationCode(`<head></head><body><div>${tag}</div></body>`, 'web', CODE)).toBe(false);
+    expect(hasVerificationCode(`<head><textarea>${tag}`, 'web', CODE)).toBe(false);
+  });
+
+  it('stays fast on crafted pages', () => {
+    const started = performance.now();
+    const junk = '<meta name="umkreis-verification" '.repeat(60_000) + '<script type="application/ld+json" '.repeat(60_000);
+    expect(hasVerificationCode(junk, 'web', CODE)).toBe(false);
+    expect(jsonLdBlocks(junk)).toEqual([]);
+    expect(jsonLdBlocks('<script type=application/ld+json>'.repeat(60_000))).toEqual([]);
+    expect(performance.now() - started).toBeLessThan(2000);
   });
 });
 
@@ -178,7 +205,7 @@ describe('connect registry', () => {
     expect(readFileSync(file, 'utf8')).not.toContain(key); // only the hash is stored
     files.set(form.url, ics());
     const first = await reg.check(source.id, key);
-    expect(first.result).toMatchObject({ codeFound: false, format: 'ics', upcoming: 1 });
+    expect(first.result).toMatchObject({ codeFound: false, format: 'ics', upcoming: 0 });
     expect(first.source.status).toBe('pending');
     expect(reg.providers()).toHaveLength(0);
 
@@ -202,9 +229,15 @@ describe('connect registry', () => {
   });
 
   it('does not show the code to visitors', async () => {
-    const { reg, files } = setup('auto');
+    const { reg, files, tick } = setup('auto');
     const { source, key } = reg.submit(form);
     files.set(form.url, ics().replace('SUMMARY:Vereinsfest', `SUMMARY:Vereinsfest\r\nDESCRIPTION:Freigabe ${source.code}`));
+    // In an entry alone the code does not count, and nothing is read from the unconfirmed calendar.
+    const first = await reg.check(source.id, key);
+    expect(first.result).toMatchObject({ codeFound: false, upcoming: 0 });
+    expect(first.result.message).toMatch(/Beschreibung des Kalenders/);
+    tick(31_000);
+    files.set(form.url, ics(source.code).replace('SUMMARY:Vereinsfest', `SUMMARY:Vereinsfest\r\nDESCRIPTION:Freigabe ${source.code}`));
     expect((await reg.check(source.id, key)).source.status).toBe('active');
     const q = { scope: 'de' as const, from: new Date('2026-12-01T00:00:00Z'), to: new Date('2026-12-10T00:00:00Z') };
     const [e] = (await reg.providers()[0].fetchEvents(q)).events;
@@ -248,6 +281,24 @@ describe('connect registry', () => {
     expect(() => reg.submit({ ...form, url: 'https://www.verein.example/anderer.ics' })).toThrow(/gesperrt/);
     expect(() => reg.remove(source.id, key)).toThrow(/Betreiber/);
     expect(reg.providers()).toHaveLength(0);
+  });
+
+  it('a blocked site stops every source there, including ones already live', async () => {
+    const { reg, files, file } = setup('auto');
+    const second = { ...form, url: 'https://verein.example/jugend.ics' };
+    const a = reg.submit(form);
+    const b = reg.submit(second);
+    files.set(form.url, ics(a.source.code));
+    files.set(second.url, ics(b.source.code));
+    await reg.check(a.source.id, a.key);
+    await reg.check(b.source.id, b.key);
+    expect(reg.providers()).toHaveLength(2);
+
+    const list = JSON.parse(readFileSync(file, 'utf8'));
+    list.find((x: { id: string }) => x.id === a.source.id).status = 'blocked';
+    writeFileSync(file, JSON.stringify(list));
+    expect(reg.providers()).toHaveLength(0);
+    await expect(reg.check(b.source.id, b.key)).rejects.toThrow(/gesperrt/);
   });
 
   it('tells organisers when a page has no schema.org events', async () => {

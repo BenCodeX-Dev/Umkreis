@@ -46,9 +46,14 @@ if (cmd === 'list') {
     return `${s.name}: entfernt.`;
   });
 } else if (cmd === 'block') {
-  change((s, list, i) => {
-    list[i] = { ...s, status: 'blocked' };
-    return `${s.name}: gesperrt. Neue Anmeldungen von ${s.site} werden abgelehnt.`;
+  change((s, list) => {
+    let n = 0;
+    for (let j = 0; j < list.length; j++) {
+      if (list[j].site !== s.site) continue;
+      list[j] = { ...list[j], status: 'blocked' };
+      n++;
+    }
+    return `${s.site}: gesperrt (${n} ${n === 1 ? 'Eintrag' : 'Einträge'}). Keine Termine und keine neuen Anmeldungen mehr von dieser Website.`;
   });
 } else {
   console.error('Befehle: list | approve <id> | remove <id> | block <id>');

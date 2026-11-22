@@ -25,6 +25,7 @@
 
 ### Sicherheit
 
+- **Nachweis des Veranstalters gehärtet** (Befunde einer automatischen Sicherheitsprüfung): Der Code zählt im iCal-Kalender nur in der Kalenderbeschreibung, nicht bei einzelnen Terminen; auf Webseiten nur in echten `<meta>`-Elementen im `<head>`, nicht in Kommentaren, Skripten oder im Seiteninhalt. Inhalte werden erst nach gefundenem Code ausgewertet, mit begrenzter Rechenmenge für Wiederholungen; die HTML-Suche läuft in linearer Zeit. `block` sperrt die ganze Website, auch bereits verbundene Kalender dort.
 - **Abrufe angemeldeter Kalender** nur per `https` an öffentliche Adressen, jede Weiterleitung (höchstens 3) erneut geprüft, keine eigenen Ports oder Zugangsdaten, höchstens 5 MB. Anmeldungen mit Fangfeld, Zustimmung, Ratenbegrenzung (5 pro Stunde je Client, 50 insgesamt) und Obergrenzen; Verwaltungsschlüssel nur als SHA-256-Wert gespeichert.
 - **Vorschaubilder nur von öffentlichen Adressen:** Bildadressen aus Panoramax-Daten werden nur per `https` an öffentliche IP-Adressen abgerufen (geprüft wird die DNS-Antwort, verbunden wird genau mit der geprüften Adresse). Vorher konnte eine präparierte Bildadresse den Server Anfragen ins lokale Netz stellen lassen. Eine Gegenstelle mit ungültigem HTTP-Status bringt den Server nicht mehr zum Absturz.
 - **Ratenbegrenzung** für alle API-Aufrufe, die Fremddienste erreichen (`429` mit `Retry-After`), und höchstens 5 wartende Ortssuchen. Hinter einem eigenen Reverse-Proxy zählt sie mit `TRUST_PROXY=1` pro Client. Gleichzeitige gleiche Anfragen teilen sich einen Abruf bei der Quelle.

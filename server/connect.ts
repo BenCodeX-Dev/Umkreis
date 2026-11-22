@@ -8,7 +8,7 @@ import { plainText } from '../shared/text.ts';
 import type { CategoryId } from '../shared/types.ts';
 import { parseIcs } from './ics.ts';
 import { readTextCapped } from './providers/download.ts';
-import { createIcsProvider, icsEventToItems, type FeedConfig } from './providers/ics.ts';
+import { createIcsProvider, icsEventToItems, MAX_STEPS_PER_REQUEST, type FeedConfig } from './providers/ics.ts';
 import type { EventProvider, FetchFn } from './providers/types.ts';
 import { createWebProvider, parseEventPage } from './providers/web.ts';
 import { hasVerificationCode, newVerificationCode } from './verification.ts';
@@ -64,6 +64,8 @@ export interface ConnectOptions {
 const PENDING_TTL_MS = 48 * 3600_000;
 const CHECK_INTERVAL_MS = 30_000;
 const MAX_BYTES = 5 * 1024 * 1024;
+/** Same limit as the regular reader of web pages, so a page that passes the check can also be read later. */
+const WEB_MAX_BYTES = 3 * 1024 * 1024;
 const LOOKAHEAD_MS = 62 * 86_400_000;
 const STATUSES: ConnectStatus[] = ['pending', 'waiting', 'active', 'withdrawn', 'blocked'];
 
@@ -161,6 +163,11 @@ export function viewOf(s: ConnectedSource): SourceView {
   return { id: s.id, url: s.url, site: s.site, name: s.name, area: s.area.label, format: s.format, code: s.code, status: s.status, createdAt: s.createdAt, checkedAt: s.checkedAt };
 }
 
+/** Sites the operator blocked: no new sign-ups, no checks and no events from any address there. */
+function blockedSites(list: ConnectedSource[]): Set<string> {
+  return new Set(list.filter((x) => x.status === 'blocked').map((x) => x.site));
+}
+
 export function createConnectRegistry(o: ConnectOptions) {
   const store = createSourceStore(o.file);
   const now = o.now ?? Date.now;
@@ -246,7 +253,7 @@ export function createConnectRegistry(o: ConnectOptions) {
   /** Downloads the address once, finds out what it is, and whether the code is in place. */
   async function check(id: unknown, key: unknown) {
     const s = authorized(id, key);
-    if (s.status === 'blocked') throw new ConnectError(403, 'Diese Website ist für Umkreis gesperrt.');
+    if (s.status === 'blocked' || blockedSites(store.reload()).has(s.site)) throw new ConnectError(403, 'Diese Website ist für Umkreis gesperrt.');
     const t = now();
     if (t - (lastCheck.get(s.id) ?? -Infinity) < CHECK_INTERVAL_MS) throw new ConnectError(429, 'Bitte ein paar Sekunden warten und dann erneut prüfen.');
     lastCheck.set(s.id, t);
@@ -266,15 +273,18 @@ export function createConnectRegistry(o: ConnectOptions) {
 
     const format: 'ics' | 'web' | null = /BEGIN:VCALENDAR/i.test(text) ? 'ics' : /<(?:!doctype html|html|head|body)\b/i.test(text) ? 'web' : null;
     if (!format) throw new ConnectError(422, 'Unter dieser Adresse liegt weder ein iCal-Kalender noch eine Webseite.');
+    if (format === 'web' && Buffer.byteLength(text) > WEB_MAX_BYTES) throw new ConnectError(422, 'Die Seite ist zu groß (höchstens 3 MB). Nutze eine schlankere Terminseite oder den iCal-Link.');
     const feed = feedOf(s, format);
     const from = new Date(t), to = new Date(t + LOOKAHEAD_MS);
-    let upcoming: number;
-    if (format === 'ics') {
-      upcoming = parseIcs(text).reduce((n, ev) => n + icsEventToItems(feed, ev, from, to).length, 0);
-    } else {
+    // The (cheap, linear) code check comes first: unverified content is never parsed for events.
+    const codeFound = hasVerificationCode(text, format, s.code);
+    let upcoming = 0;
+    if (codeFound && format === 'ics') {
+      const budget = { steps: MAX_STEPS_PER_REQUEST };
+      upcoming = parseIcs(text).reduce((n, ev) => n + icsEventToItems(feed, ev, from, to, budget).length, 0);
+    } else if (codeFound) {
       upcoming = parseEventPage(feed, text, s.url).items.filter((e) => Date.parse(e.end ?? e.start) >= t && Date.parse(e.start) < to.getTime()).length;
     }
-    const codeFound = hasVerificationCode(text, format, s.code);
     const checkedAt = new Date(t).toISOString();
 
     let status = s.status;
@@ -282,7 +292,7 @@ export function createConnectRegistry(o: ConnectOptions) {
     if (!codeFound) {
       if (status === 'active' || status === 'waiting') status = 'withdrawn';
       message = format === 'ics'
-        ? 'Der Code steht noch nicht im Kalender. Trag ihn in die Beschreibung des Kalenders (oder eines Termins) ein, warte, bis dein Kalenderdienst die Datei aktualisiert, und prüfe dann erneut.'
+        ? 'Der Code steht noch nicht in der Beschreibung des Kalenders. Trag ihn dort ein (nicht bei einem einzelnen Termin), warte, bis dein Kalenderdienst die Datei aktualisiert, und prüfe dann erneut.'
         : `Der Code steht noch nicht im <meta>-Tag der Seite. Füge ihn wie angegeben in den <head> ein und prüfe dann erneut.`;
     } else if (format === 'web' && upcoming === 0 && !/application\/ld\+json/i.test(text)) {
       message = 'Der Code ist da, aber die Seite enthält keine Veranstaltungsdaten im schema.org-Format. Nutze stattdessen den iCal-Link deines Kalenders oder ein Kalender-Plugin, das schema.org-Daten ausgibt.';
@@ -307,8 +317,10 @@ export function createConnectRegistry(o: ConnectOptions) {
   function providers(): EventProvider[] {
     const out: EventProvider[] = [];
     const live = new Set<string>();
-    for (const s of store.reload()) {
-      if (s.status !== 'active' || !s.format) continue;
+    const list = store.reload();
+    const blocked = blockedSites(list);
+    for (const s of list) {
+      if (s.status !== 'active' || !s.format || blocked.has(s.site)) continue;
       const sig = `${s.url}|${s.code}|${s.format}|${s.name}|${s.area.lat},${s.area.lon}|${s.category ?? ''}`;
       live.add(s.id);
       let b = built.get(s.id);
