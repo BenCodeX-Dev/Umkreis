@@ -7,6 +7,7 @@
 - **Offene Daten von destination.one** als Quelle ohne Schlüssel, standardmäßig an (`DESTINATION_ONE=off` schaltet sie ab). Wiederkehrende Termine (wöchentliche Märkte, tägliche Ausstellungen, „jeden 1. Dienstag“) werden für den gewählten Zeitraum in einzelne Termine aufgelöst. Nur Einträge unter Public Domain oder CC0 werden übernommen.
 - **Eigener Kartendienst:** `MAP_TILE_URL` und `MAP_TILE_ATTRIBUTION` ersetzen die OSM-Kacheln, z. B. für eine öffentliche Seite mit viel Verkehr. Nur `https`-Vorlagen mit `{z}`, `{x}`, `{y}`; der Host wird automatisch in die Content-Security-Policy übernommen und im Zustimmungstext genannt.
 - **Impressum und Datenschutzerklärung** als Links in der Fußzeile, aus `config/impressum.txt` und `config/datenschutz.txt` (Vorlagen liegen bei). Der Server warnt beim Start, wenn er öffentlich erreichbar ist und kein Impressum hat.
+- **Mac-App bringt Node.js mit:** `npm run mac` legt die offizielle Node.js-Version v26.13.1 (LTS, Apple Silicon) von nodejs.org bei, geprüft gegen eine festgeschriebene SHA-256-Prüfsumme. Die App läuft damit auf Macs ohne installiertes Node; auf Intel-Macs oder mit `UMKREIS_BUNDLE_NODE=0` wird weiter ein installiertes Node verwendet.
 - **GitHub-Prüfung:** `npm audit` und `npm run check` bei jedem Push und Pull Request auf Node 22.18 und aktuellem LTS; Dependabot für npm-Pakete und Actions.
 
 ### Geändert

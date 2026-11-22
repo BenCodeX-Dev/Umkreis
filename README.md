@@ -67,7 +67,7 @@ npm run mac        # baut build/mac.noindex/Umkreis.app und installiert nach ~/A
 Nach `/Applications` statt `~/Applications`: `UMKREIS_INSTALL_DIR=/Applications npm run mac`. Nur bauen: `UMKREIS_NO_INSTALL=1 npm run mac`. Vor einer Neuinstallation die laufende App beenden.
 
 - **Voraussetzungen zum Bauen:** macOS 13 oder neuer, Xcode-Befehlszeilenwerkzeuge (`swiftc`, `iconutil`), Node ≥ 22.18. Das Programm ist universell (Apple Silicon und Intel); getestet nur auf Apple Silicon.
-- **Voraussetzung zum Ausführen: Node.js ≥ 22.18** muss auf dem Mac installiert sein (gesucht in `/opt/homebrew/bin`, `/usr/local/bin` und im Login-Shell-`PATH`; eigener Pfad über `UMKREIS_NODE`). Node wird nicht mitgeliefert. Fehlt es, zeigt die App eine Anleitung statt einer leeren Seite.
+- **Node.js ist dabei:** `npm run mac` legt die offizielle Node.js-LTS-Version für Apple Silicon von nodejs.org bei (≈ 58 MB Download, einmalig in `build/node-cache`; die App wird ≈ 143 MB groß). Das Archiv wird gegen eine im Skript festgeschriebene SHA-256-Prüfsumme geprüft und sonst verworfen; die Prüfsumme stammt aus der mit einem Node.js-Release-Schlüssel signierten `SHASUMS256.txt`. Auf Intel-Macs oder mit `UMKREIS_BUNDLE_NODE=0` braucht die App ein installiertes Node.js ≥ 22.18 (gesucht in `/opt/homebrew/bin`, `/usr/local/bin` und im Login-Shell-`PATH`; eigener Pfad über `UMKREIS_NODE`, hat Vorrang). Fehlt es, zeigt die App eine Anleitung statt einer leeren Seite. Für Sicherheitsupdates von Node `NODE_VERSION` und `NODE_SHA256` in `scripts/build-mac.sh` anheben und neu bauen.
 - **Echte Daten:** „Umkreis → Datenordner im Finder zeigen“ öffnet `~/Library/Application Support/Umkreis/`. Dort `.env` mit `TICKETMASTER_API_KEY=…` anlegen und/oder `feeds.example.json` nach `feeds.json` kopieren, dann die App neu starten (siehe `LIESMICH.txt` im Ordner).
 - **Protokoll:** `~/Library/Logs/Umkreis/server.log` (ohne Koordinaten, wird bei jedem Start neu angelegt).
 - **Verhalten:** Links zu Originalanzeigen und Kartendiensten öffnen außerhalb der App über macOS (Standardbrowser; ob Apple-Karten-Links direkt in Karten landen, hängt von der macOS-Version ab); Kalendereinträge öffnen Kalender, das vor dem Import selbst nachfragt. „Meinen aktuellen Standort verwenden“ fragt über die Ortungsdienste von macOS (Genauigkeit ca. 1 km). Die App nutzt fest Port 52715, damit gemerkte Einträge und Einstellungen erhalten bleiben; ist er belegt, sagt sie das.
@@ -81,7 +81,7 @@ Für die Weitergabe bräuchte es:
 1. eine Mitgliedschaft im [Apple Developer Program](https://developer.apple.com/programs/) (99 USD/Jahr) und ein „Developer ID Application“-Zertifikat,
 2. Signieren mit Hardened Runtime (`codesign --options runtime --timestamp -s "Developer ID Application: …"`),
 3. Notarisierung über `xcrun notarytool submit … --wait` und `xcrun stapler staple`,
-4. eine Lösung für Node: entweder einen eigenen Node-Build mitliefern und mitsignieren oder die Voraussetzung dokumentieren. Der Homebrew-Node auf diesem Mac lässt sich nicht einfach einpacken, weil er gegen Homebrew-Bibliotheken gelinkt ist.
+4. für das mitgelieferte Node.js: Es trägt bereits die Developer-ID-Signatur (mit Hardened Runtime) der Node.js-Entwickler. Ob die Notarisierung das so annimmt oder Node mit dem eigenen Zertifikat (und JIT-Berechtigung) neu signiert werden muss, ist nicht geprüft.
 
 Nichts davon ist eingerichtet. Für den Mac App Store wäre zusätzlich eine Sandbox nötig, die einen mitgestarteten Node-Prozess erschwert.
 
@@ -179,4 +179,4 @@ Was eingebaut ist – keine Zertifizierung, keine Garantie; Funde bitte melden.
 - Kartenlinks: Die einheitlichen Apple-Karten-Links sind laut Apple für iOS 18.4 / macOS 15.4 und neuer dokumentiert; ältere Geräte öffnen sie im Browser (nicht auf allen Systemen geprüft). Die Adresssuche kann bei mehrdeutigen Namen einen falschen Ort treffen. Das OpenStreetMap-Suchformat ist nicht offiziell dokumentiert.
 - Widersprüche werden nur zwischen Einträgen der aktuellen Ergebnisse erkannt, und nur bei gleichem Titel am gleichen Tag.
 - Panoramax deckt Deutschland lückenhaft ab; meist gibt es keine Bilder. Abgefragt wird die öffentliche Instanz api.panoramax.xyz ohne Schlüssel; fällt sie aus, zeigt die Detailansicht einen Fehlerhinweis.
-- Mac-App: nicht notarisiert, braucht ein installiertes Node.js, nur auf Apple Silicon unter macOS 27 getestet. Die Standortabfrage über die Ortungsdienste ist nicht durchgetestet (siehe CHANGELOG).
+- Mac-App: nicht notarisiert, bringt Node.js nur für Apple Silicon mit (Intel braucht ein installiertes Node.js), nur auf Apple Silicon unter macOS 27 getestet. Die Standortabfrage über die Ortungsdienste ist nicht durchgetestet (siehe CHANGELOG).

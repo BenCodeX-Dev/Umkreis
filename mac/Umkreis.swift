@@ -171,6 +171,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
   private func findNode() -> String? {
     var candidates: [String] = []
     if let custom = ProcessInfo.processInfo.environment["UMKREIS_NODE"] { candidates.append(custom) }
+    // Official Node.js build shipped inside the app (Apple silicon); fails the version check on Intel.
+    if let bundled = Bundle.main.url(forAuxiliaryExecutable: "node")?.path { candidates.append(bundled) }
     candidates += ["/opt/homebrew/bin/node", "/usr/local/bin/node"]
     if let found = candidates.first(where: nodeIsUsable) { return found }
     // Version managers (nvm, fnm, volta …) only show up in a login shell.
