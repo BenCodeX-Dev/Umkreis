@@ -56,7 +56,7 @@ export function createEventService(providers: EventProvider[], mode: SourceMode,
       const p = providers[i];
       if (r.status === 'rejected') {
         const message = r.reason instanceof ProviderError ? r.reason.message : `${p.name} konnte nicht geladen werden.`;
-        if (!(r.reason instanceof ProviderError)) console.error(`[${p.id}]`, r.reason instanceof Error ? r.reason.message : r.reason);
+        if (!(r.reason instanceof ProviderError)) console.error('[%s]', p.id, r.reason instanceof Error ? r.reason.message : r.reason);
         sources.push({ id: p.id, name: p.name, kind: p.kind, ok: false, count: 0, message });
         return;
       }

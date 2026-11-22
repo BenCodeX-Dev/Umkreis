@@ -20,6 +20,7 @@
 - **Unplausible Ortsangaben aus iCal-Feeds** (außerhalb Deutschlands oder weiter als `area.radiusKm`, Standard 50 km, von der Ortsmitte des Kalenders) werden nicht mehr als Kartenposition übernommen; die Detailansicht sagt das. `area` muss in Deutschland liegen.
 - Die Detailansicht nennt die Ziel-Domain jeder Originalanzeige und warnt bei `http`.
 - Kalenderexport: Ein einzelnes Wagenrücklauf-Zeichen in Quelldaten kann keine zusätzlichen Kalenderfelder mehr einschleusen.
+- Server-Protokoll: Quellen-Fehler werden mit fester Formatzeichenkette geschrieben, protokollierte Pfade auf 200 Zeichen gekürzt.
 - Mac-App: rundet den Gerätestandort schon nativ auf ≈ 1 km, lädt keine `data:`/`blob:`-Seiten mehr ins Fenster und macht Datenordner und `.env` nur für den eigenen Benutzer lesbar.
 
 ## 0.2.0 – 2026-11-20

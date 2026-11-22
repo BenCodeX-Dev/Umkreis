@@ -32,7 +32,7 @@ http
     }
     // Log only method, path and status — never query strings or bodies (they may carry location data).
     res.on('finish', () => {
-      const p = (req.url ?? '/').split('?')[0];
+      const p = (req.url ?? '/').split('?')[0].slice(0, 200);
       if (p.startsWith('/api/')) console.log(`${req.method} ${p} ${res.statusCode} ${Date.now() - started}ms`);
     });
     api(req, res)
