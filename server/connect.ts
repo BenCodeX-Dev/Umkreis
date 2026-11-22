@@ -24,7 +24,7 @@ export type ConnectStatus = 'pending' | 'waiting' | 'active' | 'withdrawn' | 'bl
 export interface ConnectedSource {
   id: string;
   url: string;
-  /** Host name, shown to visitors and used to block a whole site. */
+  /** Host name without `www.` and trailing dot, shown to visitors and used to block a whole site. */
   site: string;
   name: string;
   area: { label: string; lat: number; lon: number };
@@ -37,6 +37,8 @@ export interface ConnectedSource {
   createdAt: string;
   checkedAt?: string;
   approvedAt?: string;
+  /** Set by the operator (`block-site`): the whole site and its subdomains are blocked, not just this address. */
+  blockSite?: boolean;
 }
 
 /** What the organiser sees about their source. */
@@ -84,10 +86,12 @@ export function normalizeSourceUrl(raw: unknown): { url: string; site: string } 
   if (u.protocol !== 'https:') return 'Nur https-Adressen sind möglich.';
   if (u.username || u.password) return 'Adressen mit Zugangsdaten sind nicht erlaubt.';
   if (u.port) return 'Adressen mit eigenem Port sind nicht erlaubt.';
-  const host = u.hostname.toLowerCase();
-  if (isIP(host.replace(/^\[|\]$/g, '')) || !host.includes('.') || host.endsWith('.local') || host.endsWith('.internal')) {
+  // One canonical spelling per host (lowercase, punycode, no trailing dot), so blocks can't be dodged by `verein.example.`.
+  const host = u.hostname.toLowerCase().replace(/\.+$/, '');
+  if (isIP(host.replace(/^\[|\]$/g, '')) || !host.includes('.') || host.split('.').some((l) => !l) || host.endsWith('.local') || host.endsWith('.internal')) {
     return 'Bitte eine öffentliche Adresse mit Domainnamen angeben.';
   }
+  u.hostname = host;
   u.hash = '';
   return { url: u.toString(), site: host.replace(/^www\./, '') };
 }
@@ -113,6 +117,7 @@ function validStored(raw: unknown): ConnectedSource | null {
     createdAt: s.createdAt,
     checkedAt: typeof s.checkedAt === 'string' ? s.checkedAt : undefined,
     approvedAt: typeof s.approvedAt === 'string' ? s.approvedAt : undefined,
+    blockSite: s.blockSite === true ? true : undefined,
   };
 }
 
@@ -163,9 +168,22 @@ export function viewOf(s: ConnectedSource): SourceView {
   return { id: s.id, url: s.url, site: s.site, name: s.name, area: s.area.label, format: s.format, code: s.code, status: s.status, createdAt: s.createdAt, checkedAt: s.checkedAt };
 }
 
-/** Sites the operator blocked: no new sign-ups, no checks and no events from any address there. */
-function blockedSites(list: ConnectedSource[]): Set<string> {
-  return new Set(list.filter((x) => x.status === 'blocked').map((x) => x.site));
+/** Sites the operator blocked as a whole (`block-site`): no sign-ups, checks or events from there or any subdomain. */
+export function blockedSites(list: ConnectedSource[]): Set<string> {
+  return new Set(list.filter((x) => x.status === 'blocked' && x.blockSite).map((x) => x.site));
+}
+
+/** True if `site` or one of its parent domains is in `blocked`. */
+export function siteBlocked(site: string, blocked: Set<string>): boolean {
+  for (let d = site; ; d = d.slice(d.indexOf('.') + 1)) {
+    if (blocked.has(d)) return true;
+    if (!d.includes('.')) return false;
+  }
+}
+
+/** The entry itself is blocked, or its site is. */
+function isBlocked(s: ConnectedSource, list: ConnectedSource[]): boolean {
+  return s.status === 'blocked' || siteBlocked(s.site, blockedSites(list));
 }
 
 export function createConnectRegistry(o: ConnectOptions) {
@@ -187,7 +205,8 @@ export function createConnectRegistry(o: ConnectOptions) {
   const update = (id: string, patch: Partial<ConnectedSource>) =>
     store.mutate((list) => {
       const i = list.findIndex((x) => x.id === id);
-      if (i >= 0) list[i] = { ...list[i], ...patch };
+      // A block by the operator always wins over automatic status changes.
+      if (i >= 0 && list[i].status !== 'blocked') list[i] = { ...list[i], ...patch };
     });
 
   function submit(body: unknown): { source: SourceView; key: string } {
@@ -213,7 +232,8 @@ export function createConnectRegistry(o: ConnectOptions) {
       for (let i = list.length - 1; i >= 0; i--) {
         if (list[i].status === 'pending' && t - Date.parse(list[i].createdAt) > PENDING_TTL_MS) list.splice(i, 1);
       }
-      if (list.some((x) => x.status === 'blocked' && x.site === norm.site)) throw new ConnectError(403, 'Diese Website ist für Umkreis gesperrt.');
+      if (siteBlocked(norm.site, blockedSites(list))) throw new ConnectError(403, 'Diese Website ist für Umkreis gesperrt.');
+      if (list.some((x) => x.url === norm.url && x.status === 'blocked')) throw new ConnectError(403, 'Diese Adresse ist für Umkreis gesperrt.');
       if (list.some((x) => x.url === norm.url && x.status !== 'pending')) throw new ConnectError(409, 'Diese Adresse ist schon verbunden.');
       if (list.filter((x) => x.status === 'pending').length >= (o.maxPending ?? 100)) {
         throw new ConnectError(503, 'Gerade sind zu viele Anmeldungen offen. Bitte später erneut versuchen.');
@@ -253,7 +273,7 @@ export function createConnectRegistry(o: ConnectOptions) {
   /** Downloads the address once, finds out what it is, and whether the code is in place. */
   async function check(id: unknown, key: unknown) {
     const s = authorized(id, key);
-    if (s.status === 'blocked' || blockedSites(store.reload()).has(s.site)) throw new ConnectError(403, 'Diese Website ist für Umkreis gesperrt.');
+    if (isBlocked(s, store.reload())) throw new ConnectError(403, 'Diese Adresse ist für Umkreis gesperrt.');
     const t = now();
     if (t - (lastCheck.get(s.id) ?? -Infinity) < CHECK_INTERVAL_MS) throw new ConnectError(429, 'Bitte ein paar Sekunden warten und dann erneut prüfen.');
     lastCheck.set(s.id, t);
@@ -302,13 +322,17 @@ export function createConnectRegistry(o: ConnectOptions) {
         ? `Verbunden. ${upcoming} kommende Termine gefunden; sie erscheinen ab jetzt in Umkreis. Lass den Code stehen – entfernst du ihn, verschwinden die Termine wieder.`
         : `Bestätigt. ${upcoming} kommende Termine gefunden. Der Betreiber dieses Servers schaltet neue Kalender von Hand frei; danach erscheinen sie automatisch.`;
     }
-    store.mutate((list) => {
+    const blockedMeanwhile = store.mutate((list) => {
       const i = list.findIndex((x) => x.id === s.id);
-      if (i < 0) return;
+      if (i < 0) return false;
+      // The download can take a while; an operator block made in the meantime must stay in place.
+      if (isBlocked(list[i], list)) return true;
       list[i] = { ...list[i], status, format, checkedAt, approvedAt: status === 'active' ? (list[i].approvedAt ?? checkedAt) : list[i].approvedAt };
       // Whoever proves control first keeps the address; other unconfirmed sign-ups for it are dropped.
       if (codeFound) for (let j = list.length - 1; j >= 0; j--) if (j !== i && list[j].url === s.url && list[j].status === 'pending') list.splice(j, 1);
+      return false;
     });
+    if (blockedMeanwhile) throw new ConnectError(403, 'Diese Adresse ist für Umkreis gesperrt.');
     const fresh = store.reload().find((x) => x.id === s.id);
     return { source: viewOf(fresh ?? { ...s, status, format, checkedAt }), result: { codeFound, format, upcoming, message } };
   }
@@ -320,7 +344,7 @@ export function createConnectRegistry(o: ConnectOptions) {
     const list = store.reload();
     const blocked = blockedSites(list);
     for (const s of list) {
-      if (s.status !== 'active' || !s.format || blocked.has(s.site)) continue;
+      if (s.status !== 'active' || !s.format || siteBlocked(s.site, blocked)) continue;
       const sig = `${s.url}|${s.code}|${s.format}|${s.name}|${s.area.lat},${s.area.lon}|${s.category ?? ''}`;
       live.add(s.id);
       let b = built.get(s.id);
@@ -343,10 +367,13 @@ export function createConnectRegistry(o: ConnectOptions) {
     remove(id: unknown, key: unknown) {
       const s = authorized(id, key);
       if (s.status === 'blocked') throw new ConnectError(403, 'Gesperrte Einträge kann nur der Betreiber entfernen.');
-      store.mutate((list) => {
+      const removed = store.mutate((list) => {
         const i = list.findIndex((x) => x.id === s.id);
-        if (i >= 0) list.splice(i, 1);
+        if (i < 0 || list[i].status === 'blocked') return false;
+        list.splice(i, 1);
+        return true;
       });
+      if (!removed && store.reload().some((x) => x.id === s.id)) throw new ConnectError(403, 'Gesperrte Einträge kann nur der Betreiber entfernen.');
       return { removed: true };
     },
     providers,

@@ -148,7 +148,9 @@ describe('web events', () => {
 describe('source addresses', () => {
   it('normalises webcal links and refuses unsafe addresses', () => {
     expect(normalizeSourceUrl('webcal://www.verein.example/kalender.ics#x')).toEqual({ url: 'https://www.verein.example/kalender.ics', site: 'verein.example' });
-    for (const bad of ['http://verein.example/k.ics', 'https://user:pw@verein.example/', 'https://verein.example:8443/', 'https://127.0.0.1/', 'https://[::1]/', 'https://localhost/', 'https://nas.local/', 'ftp://verein.example/', 'kein link', '']) {
+    expect(normalizeSourceUrl('https://Verein.EXAMPLE./k.ics')).toEqual({ url: 'https://verein.example/k.ics', site: 'verein.example' });
+    expect(normalizeSourceUrl('https://bücher.example/k.ics')).toEqual({ url: 'https://xn--bcher-kva.example/k.ics', site: 'xn--bcher-kva.example' });
+    for (const bad of ['https://verein..example/k.ics', 'https://./', 'http://verein.example/k.ics', 'https://user:pw@verein.example/', 'https://verein.example:8443/', 'https://127.0.0.1/', 'https://[::1]/', 'https://localhost/', 'https://nas.local/', 'ftp://verein.example/', 'kein link', '']) {
       expect(typeof normalizeSourceUrl(bad)).toBe('string');
     }
   });
@@ -276,29 +278,72 @@ describe('connect registry', () => {
     expect(() => reg.submit(form)).toThrow(/schon verbunden/);
 
     const list = JSON.parse(readFileSync(file, 'utf8'));
-    list[0].status = 'blocked';
+    Object.assign(list[0], { status: 'blocked', blockSite: true });
     writeFileSync(file, JSON.stringify(list));
     expect(() => reg.submit({ ...form, url: 'https://www.verein.example/anderer.ics' })).toThrow(/gesperrt/);
     expect(() => reg.remove(source.id, key)).toThrow(/Betreiber/);
     expect(reg.providers()).toHaveLength(0);
   });
 
-  it('a blocked site stops every source there, including ones already live', async () => {
-    const { reg, files, file } = setup('auto');
-    const second = { ...form, url: 'https://verein.example/jugend.ics' };
-    const a = reg.submit(form);
-    const b = reg.submit(second);
-    files.set(form.url, ics(a.source.code));
-    files.set(second.url, ics(b.source.code));
-    await reg.check(a.source.id, a.key);
-    await reg.check(b.source.id, b.key);
-    expect(reg.providers()).toHaveLength(2);
-
+  const editFile = (file: string, fn: (list: Record<string, unknown>[]) => void) => {
     const list = JSON.parse(readFileSync(file, 'utf8'));
-    list.find((x: { id: string }) => x.id === a.source.id).status = 'blocked';
+    fn(list);
     writeFileSync(file, JSON.stringify(list));
+  };
+  const q = { scope: 'local' as const, center: { lat: 49.87, lon: 8.65 }, radiusKm: 10, from: new Date('2026-12-01T00:00:00Z'), to: new Date('2026-12-10T00:00:00Z') };
+  async function twoLive(secondUrl: string) {
+    const env = setup('auto');
+    const a = env.reg.submit(form);
+    const b = env.reg.submit({ ...form, url: secondUrl });
+    env.files.set(form.url, ics(a.source.code));
+    env.files.set(secondUrl, ics(b.source.code));
+    await env.reg.check(a.source.id, a.key);
+    await env.reg.check(b.source.id, b.key);
+    expect(env.reg.providers()).toHaveLength(2);
+    return { ...env, a, b };
+  }
+
+  it('a blocked address stops only that address', async () => {
+    const { reg, file, a, b } = await twoLive('https://verein.example/jugend.ics');
+    editFile(file, (l) => void (l.find((x) => x.id === a.source.id)!.status = 'blocked'));
+    expect(reg.providers()).toHaveLength(1);
+    expect(() => reg.submit(form)).toThrow(/Adresse ist für Umkreis gesperrt/);
+    expect(() => reg.remove(a.source.id, a.key)).toThrow(/Betreiber/);
+    await expect(reg.check(a.source.id, a.key)).rejects.toThrow(/gesperrt/);
+    expect(reg.get(b.source.id, b.key).source.status).toBe('active');
+  });
+
+  it('a blocked site covers its subdomains and every spelling of the host', async () => {
+    const { reg, file, a, b } = await twoLive('https://jugend.verein.example/k.ics');
+    editFile(file, (l) => void Object.assign(l.find((x) => x.id === a.source.id)!, { status: 'blocked', blockSite: true }));
     expect(reg.providers()).toHaveLength(0);
     await expect(reg.check(b.source.id, b.key)).rejects.toThrow(/gesperrt/);
+    for (const url of ['https://VEREIN.example./neu.ics', 'https://www.verein.example/neu.ics', 'https://jugend.verein.example/neu.ics']) {
+      expect(() => reg.submit({ ...form, url })).toThrow(/Website ist für Umkreis gesperrt/);
+    }
+    expect(reg.submit({ ...form, url: 'https://anderer-verein.example/k.ics' }).source.status).toBe('pending');
+  });
+
+  it('keeps an operator block made while a check is downloading', async () => {
+    const { reg, files, file, fetchFn } = setup('auto');
+    const { source, key } = reg.submit(form);
+    files.set(form.url, ics(source.code));
+    fetchFn.mockImplementationOnce(async (u: string) => {
+      editFile(file, (l) => void (l[0].status = 'blocked'));
+      return new Response(files.get(u));
+    });
+    await expect(reg.check(source.id, key)).rejects.toThrow(/gesperrt/);
+    expect(JSON.parse(readFileSync(file, 'utf8'))[0].status).toBe('blocked');
+    expect(reg.providers()).toHaveLength(0);
+  });
+
+  it('a feed losing its code does not lift a block', async () => {
+    const { reg, files, file, a } = await twoLive('https://verein.example/jugend.ics');
+    const p = reg.providers()[0];
+    editFile(file, (l) => void (l.find((x) => x.id === a.source.id)!.status = 'blocked'));
+    files.set(form.url, ics());
+    await p.fetchEvents(q).catch(() => {});
+    expect(JSON.parse(readFileSync(file, 'utf8')).find((x: { id: string }) => x.id === a.source.id).status).toBe('blocked');
   });
 
   it('tells organisers when a page has no schema.org events', async () => {

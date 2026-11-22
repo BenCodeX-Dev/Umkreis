@@ -1,10 +1,10 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { loadServerConfig } from './config.ts';
-import { createSourceStore, type ConnectedSource } from './connect.ts';
+import { createSourceStore, siteBlocked, type ConnectedSource } from './connect.ts';
 
 /**
- * Operator tool for connected calendars: `npm run sources -- list | approve <id> | remove <id> | block <id>`.
+ * Operator tool for connected calendars: `npm run sources -- list | approve <id> | remove <id> | block <id> | block-site <id>`.
  * The running server notices the changes on its next search; no restart needed.
  */
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -46,16 +46,23 @@ if (cmd === 'list') {
     return `${s.name}: entfernt.`;
   });
 } else if (cmd === 'block') {
-  change((s, list) => {
+  change((s, list, i) => {
+    list[i] = { ...s, status: 'blocked' };
+    return `${s.name}: gesperrt. ${s.url} liefert keine Termine mehr und lässt sich nicht erneut anmelden. Die ganze Website ${s.site} sperren: block-site ${s.id}`;
+  });
+} else if (cmd === 'block-site') {
+  change((s, list, i) => {
+    list[i] = { ...s, status: 'blocked', blockSite: true };
+    const sites = new Set([s.site]);
     let n = 0;
     for (let j = 0; j < list.length; j++) {
-      if (list[j].site !== s.site) continue;
+      if (!siteBlocked(list[j].site, sites)) continue;
       list[j] = { ...list[j], status: 'blocked' };
       n++;
     }
-    return `${s.site}: gesperrt (${n} ${n === 1 ? 'Eintrag' : 'Einträge'}). Keine Termine und keine neuen Anmeldungen mehr von dieser Website.`;
+    return `${s.site} und Subdomains: gesperrt (${n} ${n === 1 ? 'Eintrag' : 'Einträge'}). Keine Termine und keine neuen Anmeldungen mehr von dort. Website-Sperre aufheben: remove ${s.id} (die übrigen Einträge bleiben einzeln gesperrt).`;
   });
 } else {
-  console.error('Befehle: list | approve <id> | remove <id> | block <id>');
+  console.error('Befehle: list | approve <id> | remove <id> | block <id> | block-site <id>');
   process.exitCode = 1;
 }
