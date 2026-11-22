@@ -130,6 +130,8 @@ export interface ServerStatus {
   /** Tile service the operator configured; missing in the answer means OpenStreetMap's public tiles. */
   map: MapTiles;
   legal: LegalPages;
+  /** "Kalender verbinden" for organisers; `connected` counts the calendars that are live. */
+  connect: { enabled: boolean; approval?: 'auto' | 'manual'; connected: number };
 }
 
 const legalText = (v: unknown): string | undefined => (isStr(v) && v.trim() && v.length <= 64_000 ? v : undefined);
@@ -145,9 +147,15 @@ export async function fetchStatus(signal?: AbortSignal): Promise<ServerStatus | 
     const l = (d.legal ?? {}) as Record<string, unknown>;
     const impressum = legalText(l.impressum);
     const privacy = legalText(l.privacy);
+    const c = (d.connect ?? {}) as Record<string, unknown>;
     return {
       mode: d.mode,
       sources: d.sources.filter((s) => s && isStr(s.name) && isStr(s.kind)),
+      connect: {
+        enabled: c.enabled === true,
+        approval: c.approval === 'auto' || c.approval === 'manual' ? c.approval : undefined,
+        connected: typeof c.connected === 'number' && Number.isInteger(c.connected) && c.connected >= 0 ? c.connected : 0,
+      },
       map,
       legal: { ...(impressum ? { impressum } : {}), ...(privacy ? { privacy } : {}) },
     };
@@ -191,4 +199,85 @@ export async function fetchStreetLevel(point: { lat: number; lon: number }, sign
     }
   }
   return { available: false, radiusM };
+}
+
+export type ConnectState = 'pending' | 'waiting' | 'active' | 'withdrawn' | 'blocked';
+export interface ConnectedSource {
+  id: string;
+  url: string;
+  site: string;
+  name: string;
+  area: string;
+  format?: 'ics' | 'web';
+  code: string;
+  status: ConnectState;
+  createdAt: string;
+  checkedAt?: string;
+}
+export interface ConnectCheck {
+  codeFound: boolean;
+  format: 'ics' | 'web';
+  upcoming: number;
+  message: string;
+}
+export interface ConnectForm {
+  url: string;
+  name: string;
+  areaLabel: string;
+  lat: number;
+  lon: number;
+  category?: string;
+  consent: boolean;
+  /** Hidden field that people leave empty. */
+  website: string;
+}
+
+const CONNECT_STATES: ConnectState[] = ['pending', 'waiting', 'active', 'withdrawn', 'blocked'];
+
+function sanitizeConnected(v: unknown): ConnectedSource {
+  const s = (v ?? {}) as Record<string, unknown>;
+  const url = isStr(s.url) ? safeHttpUrl(s.url) : undefined;
+  if (!isStr(s.id) || !url || !isStr(s.name) || !isStr(s.code) || !/^umkreis-[a-z0-9]{20}$/.test(s.code) || !CONNECT_STATES.includes(s.status as ConnectState)) {
+    throw new ApiError('Die Antwort des Servers war unvollständig.', 'malformed');
+  }
+  return {
+    id: s.id,
+    url,
+    site: isStr(s.site) ? s.site : new URL(url).hostname,
+    name: s.name,
+    area: isStr(s.area) ? s.area : '',
+    format: s.format === 'ics' || s.format === 'web' ? s.format : undefined,
+    code: s.code,
+    status: s.status as ConnectState,
+    createdAt: isStr(s.createdAt) ? s.createdAt : '',
+    checkedAt: isStr(s.checkedAt) ? s.checkedAt : undefined,
+  };
+}
+
+export async function connectSource(form: ConnectForm): Promise<{ source: ConnectedSource; key: string }> {
+  const d = (await postJson('/api/connect', form)) as Record<string, unknown>;
+  if (!isStr(d?.key)) throw new ApiError('Die Antwort des Servers war unvollständig.', 'malformed');
+  return { source: sanitizeConnected(d.source), key: d.key };
+}
+
+export async function checkSource(id: string, key: string): Promise<{ source: ConnectedSource; result: ConnectCheck }> {
+  const d = (await postJson('/api/connect/check', { id, key })) as Record<string, unknown>;
+  const r = (d?.result ?? {}) as Record<string, unknown>;
+  return {
+    source: sanitizeConnected(d?.source),
+    result: {
+      codeFound: r.codeFound === true,
+      format: r.format === 'web' ? 'web' : 'ics',
+      upcoming: typeof r.upcoming === 'number' && r.upcoming >= 0 ? Math.floor(r.upcoming) : 0,
+      message: isStr(r.message) ? r.message : '',
+    },
+  };
+}
+
+export async function sourceStatus(id: string, key: string): Promise<ConnectedSource> {
+  return sanitizeConnected(((await postJson('/api/connect/status', { id, key })) as Record<string, unknown>)?.source);
+}
+
+export async function removeSource(id: string, key: string): Promise<void> {
+  await postJson('/api/connect/remove', { id, key });
 }

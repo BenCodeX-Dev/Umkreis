@@ -20,7 +20,13 @@ const dedupeKey = (e: EventItem) => `${normalizeForSearch(e.title).replace(/\W+/
 const venueKey = (e: EventItem) => (e.venue ? normalizeForSearch(e.venue).replace(/\W+/g, '') : '');
 
 /** Queries all providers in parallel, tolerating partial failure, then filters, de-duplicates and sorts. */
-export function createEventService(providers: EventProvider[], mode: SourceMode, cacheTtlMs = 5 * 60_000) {
+/** `providers` and `mode` may be functions, for sources that change while the server runs (connected calendars). */
+export function createEventService(
+  providers: EventProvider[] | (() => EventProvider[]),
+  mode: SourceMode | (() => SourceMode),
+  cacheTtlMs = 5 * 60_000,
+) {
+  const current = typeof providers === 'function' ? providers : () => providers;
   const cache = new TtlCache<ProviderResult>(cacheTtlMs, 300);
   /** Identical queries arriving while one is running share it instead of each calling the source again. */
   const running = new Map<string, Promise<ProviderResult>>();
@@ -43,7 +49,7 @@ export function createEventService(providers: EventProvider[], mode: SourceMode,
   }
 
   return async function collect(q: ProviderQuery): Promise<EventsResponse & { allFailed: boolean }> {
-    const active = providers.filter((p) => !p.covers || p.covers(q));
+    const active = current().filter((p) => !p.covers || p.covers(q));
     const settled = await Promise.allSettled(active.map((p) => fromProvider(p, q)));
     const sources: SourceStatus[] = [];
     let truncated = false;
@@ -87,7 +93,7 @@ export function createEventService(providers: EventProvider[], mode: SourceMode,
     events.sort((a, b) => a.start.localeCompare(b.start) || a.title.localeCompare(b.title, 'de'));
     if (events.length > MAX_EVENTS) truncated = true;
     return {
-      mode,
+      mode: typeof mode === 'function' ? mode() : mode,
       events: events.slice(0, MAX_EVENTS),
       sources,
       truncated,

@@ -2,6 +2,7 @@ import { existsSync, readFileSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { createDestinationOneProvider } from './providers/destinationone.ts';
 import { createIcsProvider, validateFeed, type FeedConfig } from './providers/ics.ts';
+import { createWebProvider } from './providers/web.ts';
 import { createTicketmasterProvider } from './providers/ticketmaster.ts';
 import { parseTileTemplate, type MapTiles } from '../shared/mapTiles.ts';
 import type { SourceMode } from '../shared/types.ts';
@@ -24,6 +25,8 @@ export interface ServerConfig {
   mapTiles?: MapTiles;
   /** Plain-text legal pages shown in the footer (config/impressum.txt, config/datenschutz.txt). */
   legal?: { impressum?: string; privacy?: string };
+  /** "Kalender verbinden" for organisers (CONNECT=off disables it). Sources are kept in `file` (SOURCES_FILE). */
+  connect?: { file: string; approval: 'auto' | 'manual' };
   warnings: string[];
 }
 
@@ -67,6 +70,15 @@ export function loadServerConfig(env: Env, root = process.cwd()): ServerConfig {
     trustProxy: env.TRUST_PROXY === '1' || env.TRUST_PROXY === 'true',
     mapTiles,
     legal: legal.impressum || legal.privacy ? legal : undefined,
+    connect: /^(0|off|false|no|aus)$/i.test(env.CONNECT?.trim() ?? '')
+      ? undefined
+      : {
+          file: path.resolve(root, env.SOURCES_FILE || 'data/sources.json'),
+          // On a private server (loopback) the owner connects their own calendars; a public one needs approval.
+          approval: env.CONNECT_APPROVAL === 'auto' || env.CONNECT_APPROVAL === 'manual'
+            ? env.CONNECT_APPROVAL
+            : isLoopbackHost(env.HOST || '127.0.0.1') ? 'auto' : 'manual',
+        },
     warnings,
   };
 }
@@ -110,6 +122,6 @@ export function buildProviders(cfg: ServerConfig, fetchFn: FetchFn = fetch): { p
   const providers: EventProvider[] = [];
   if (cfg.openData) providers.push(createDestinationOneProvider(fetchFn, cfg.appUserAgent));
   if (cfg.ticketmasterKey) providers.push(createTicketmasterProvider(cfg.ticketmasterKey, fetchFn));
-  for (const feed of cfg.feeds) providers.push(createIcsProvider(feed, fetchFn));
+  for (const feed of cfg.feeds) providers.push(feed.format === 'web' ? createWebProvider(feed, fetchFn) : createIcsProvider(feed, fetchFn));
   return { providers, mode: providers.length > 0 ? 'live' : 'unconfigured' };
 }

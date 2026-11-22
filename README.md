@@ -122,12 +122,14 @@ Umkreis ist ein einzelner Node-Prozess ohne Datenbank. Für eine Website, die an
 | **destination.one Open Data** | Märkte, Ausstellungen, Führungen, Konzerte, Feste aus den Veranstaltungsdatenbanken deutscher Tourismusregionen | Ohne Schlüssel, standardmäßig an. Abschalten mit `DESTINATION_ONE=off` |
 | **Ticketmaster Discovery API** | Konzerte, Partys, Sport, Kultur mit Ticketverkauf | Kostenlosen Schlüssel holen auf developer.ticketmaster.com, in `.env` als `TICKETMASTER_API_KEY` |
 | **iCal/ICS-Feeds** | Wochenmärkte, Vereins-, Stadt- und Gemeindekalender | `config/feeds.example.json` nach `config/feeds.json` kopieren und öffentliche `.ics`-Adressen eintragen |
+| **Veranstaltungsseiten mit schema.org** | Seiten, die ihre Termine als schema.org-`Event` (JSON-LD) auszeichnen | Feed-Eintrag mit `"format": "web"` |
+| **Von Veranstaltern verbundene Kalender** | Vereine, Bühnen, Gemeinden, die ihren Kalender selbst anmelden | Fußzeile „Kalender verbinden“ (siehe unten), standardmäßig an |
 
 **destination.one:** Daten von [open.destination.one](https://open.destination.one) (Open-Data-Schnittstelle der Tourismusregionen). Umkreis übernimmt Einträge unter Public Domain, CC0, CC BY und CC BY-SA; alle anderen werden ausgelassen. Bei CC BY / CC BY-SA nennt die Detailansicht Lizenz und Herkunft (Autor, Organisation oder liefernde Stelle, wie die Quelle sie angibt) und dass der Text als reiner Text und ggf. gekürzt übernommen ist; bei CC BY-SA steht diese Fassung ebenfalls unter CC BY-SA. Die Quelle nennt keine Lizenzversion, deshalb führt der Lizenz-Link auf die Übersicht der CC-Lizenzen. Die Abdeckung ist regional sehr unterschiedlich: Manche Gegenden liefern Hunderte Termine, andere (z. B. Freiburg, Rostock, Stuttgart) fast keine. Pro Anfrage werden höchstens 300 Einträge geladen; gibt es mehr, meldet die App „gekürzt“. Für ganz Deutschland fragt Umkreis die Quelle nach einer zufälligen Auswahl (`sort=random`, nicht dokumentiert, aber geprüft), damit nicht nur die ersten Regionen der Liste erscheinen.
 
 **Bekannte öffentliche iCal-Feeds** (Abo-Adressen, die der Anbieter selbst zum Abonnieren anbietet): szene-Radar für Karlsruhe (`https://karlsruhe.szene-radar.de/ical/feed.ics`) und Freiburg (`https://freiburg.szene-radar.de/ical/feed.ics`), Konzerte und Clubabende.
 
-Eine einzige Quelle für „alle“ Veranstaltungen in Deutschland gibt es nicht. Weitere Möglichkeiten: Ticketmaster (eigener kostenloser Schlüssel) und der DZT Knowledge Graph (Schlüssel auf Antrag, noch nicht angebunden).
+Eine einzige Quelle für „alle“ Veranstaltungen in Deutschland gibt es nicht. Weitere Möglichkeiten: Ticketmaster (eigener kostenloser Schlüssel), von Veranstaltern verbundene Kalender und der DZT Knowledge Graph (Schlüssel auf Antrag, noch nicht angebunden).
 
 Feed-Eintrag (`config/feeds.json`):
 
@@ -140,9 +142,41 @@ Feed-Eintrag (`config/feeds.json`):
 - `category` (optional): Standard, wenn ein Termin keine erkennbare Kategorie hat – `konzert`, `party`, `markt`, `festival`, `community`, `kultur`, `sport`, `familie`, `sonstiges`.
 - `area` (optional, empfohlen): Ortsmitte für Termine ohne `GEO`-Angabe. Solche Entfernungen werden als „(Ortsmitte)“ gekennzeichnet. Feeds ohne `area` und ohne `GEO` erscheinen nur deutschlandweit, nicht in der Umkreissuche.
 - `area.radiusKm` (optional, 1–500, Standard 50): Wie weit Termine des Kalenders von der Ortsmitte entfernt liegen dürfen. Eine `GEO`-Angabe weiter weg – oder außerhalb Deutschlands – gilt als unplausibel (Tippfehler, vertauschte Werte, falsche Angaben) und wird nicht verwendet; der Termin bekommt dann die Ortsmitte als ungefähre Lage, und die Detailansicht sagt, warum. Für landesweite Kalender `radiusKm` entsprechend erhöhen.
-- Nur Feeds verwenden, deren Nutzung erlaubt ist (öffentlich angebotene Kalender-Abos). Kein Scraping.
+- `format` (optional, `ics` oder `web`, Standard `ics`): Bei `web` liest Umkreis die schema.org-Angaben (`<script type="application/ld+json">` mit `Event`, auch in `@graph`, `ItemList` und `subEvent`) der angegebenen Seite – nur diese eine Adresse, ohne weiteren Links zu folgen. Preise nur mit Währung, Online-Termine werden ausgelassen.
+- `code` (optional): Bestätigungscode des Veranstalters (`umkreis-` + 20 Zeichen). Ist er gesetzt und fehlt im Kalender bzw. auf der Seite, zeigt Umkreis keine Termine dieser Quelle mehr.
+- Nur Feeds verwenden, deren Nutzung erlaubt ist (öffentlich angebotene Kalender-Abos, eigene Seiten oder mit Zustimmung des Anbieters). Kein Scraping. Ob das Auslesen von schema.org-Angaben fremder Seiten ohne Zustimmung zulässig ist, ist rechtlich nicht geprüft – im Zweifel nur verbundene Kalender (mit Code) nutzen.
 
-Weitere Variablen: siehe [.env.example](.env.example) (`GEOCODER_URL`, `GEOCODER_USER_AGENT`, `PORT`, `HOST`, `ALLOWED_HOSTS`, `TRUST_PROXY`, `MAP_TILE_URL`, `MAP_TILE_ATTRIBUTION`, `IMPRESSUM_FILE`, `PRIVACY_FILE`). Wer `HOST` auf `0.0.0.0` oder eine öffentliche Adresse setzt, muss `ALLOWED_HOSTS` mit dem eigenen Hostnamen setzen – sonst warnt der Server beim Start und beantwortet jeden Hostnamen. Für den öffentlichen Nominatim-Dienst muss `GEOCODER_USER_AGENT` die eigene Installation mit Kontakt angeben.
+## Kalender verbinden (für Veranstalter)
+
+Veranstalter melden ihren Kalender selbst an – Link „Kalender verbinden“ in der Fußzeile:
+
+1. Adresse eintragen: öffentlicher iCal-Link (`https://…`, `webcal://` wird zu `https://`) oder eine Veranstaltungsseite mit schema.org-Angaben. Dazu Name, Ort (für Termine ohne genaue Ortsangabe) und optional die Art der Veranstaltungen; bestätigen, dass die Termine veröffentlicht werden dürfen.
+2. Umkreis zeigt einen Code (`umkreis-…`). Der Veranstalter trägt ihn in die Kalenderbeschreibung oder die Beschreibung eines bleibenden Termins ein – bei Webseiten als `<meta name="umkreis-verification" content="umkreis-…">` im `<head>`. Damit ist belegt, dass er den Kalender bearbeiten kann.
+3. „Jetzt prüfen“: Findet Umkreis den Code, erscheinen die Termine (bei `CONNECT_APPROVAL=manual` erst nach Freischaltung). Der Code selbst wird aus Beschreibungen entfernt, bevor sie angezeigt werden.
+4. Verschwindet der Code später aus dem Kalender, verschwinden die Termine beim nächsten Abruf. „Verbindung beenden“ im selben Browser löscht die Anmeldung sofort; dieser Browser merkt sich dazu einen geheimen Schlüssel (auf dem Server liegt nur dessen SHA-256-Wert).
+
+Unbestätigte Anmeldungen verfallen nach 48 Stunden. Gespeichert wird in `data/sources.json` (nur für den Server-Benutzer lesbar, nicht im Repository; Mac-App: im Datenordner der App).
+
+Verwaltung durch den Betreiber:
+
+```bash
+npm run sources -- list            # alle Anmeldungen mit Status
+npm run sources -- approve <id>    # freischalten (bei manueller Freischaltung)
+npm run sources -- remove <id>     # löschen
+npm run sources -- block <id>      # sperren; Adressen dieser Website lassen sich nicht mehr anmelden
+```
+
+Änderungen übernimmt der laufende Server ohne Neustart.
+
+| Variable | Standard | Bedeutung |
+|---|---|---|
+| `CONNECT` | an | `off` schaltet die Anmeldung ab |
+| `CONNECT_APPROVAL` | `auto` auf 127.0.0.1, sonst `manual` | `auto`: Termine erscheinen, sobald der Code gefunden ist; `manual`: zusätzlich Freischaltung mit `npm run sources -- approve` |
+| `SOURCES_FILE` | `data/sources.json` | Ablage der Anmeldungen |
+
+Für einen öffentlichen Betrieb ist `manual` die sichere Wahl: Der Code belegt nur, dass jemand den Kalender bearbeiten kann – nicht, dass die Termine stimmen oder unbedenklich sind.
+
+Weitere Variablen: siehe [.env.example](.env.example) (`CONNECT`, `CONNECT_APPROVAL`, `SOURCES_FILE`, `GEOCODER_URL`, `GEOCODER_USER_AGENT`, `PORT`, `HOST`, `ALLOWED_HOSTS`, `TRUST_PROXY`, `MAP_TILE_URL`, `MAP_TILE_ATTRIBUTION`, `IMPRESSUM_FILE`, `PRIVACY_FILE`). Wer `HOST` auf `0.0.0.0` oder eine öffentliche Adresse setzt, muss `ALLOWED_HOSTS` mit dem eigenen Hostnamen setzen – sonst warnt der Server beim Start und beantwortet jeden Hostnamen. Für den öffentlichen Nominatim-Dienst muss `GEOCODER_USER_AGENT` die eigene Installation mit Kontakt angeben.
 
 ## Datenschutz
 
@@ -153,6 +187,7 @@ Weitere Variablen: siehe [.env.example](.env.example) (`GEOCODER_URL`, `GEOCODER
 - Die eingebettete Karte lädt Kacheln erst nach Zustimmung von `tile.openstreetmap.org` (oder dem mit `MAP_TILE_URL` eingestellten Dienst); der Kachelserver sieht IP-Adresse und Kartenausschnitt, nicht den gespeicherten Standort. Straßenbilder werden erst auf Klick gesucht – der eigene Server fragt Panoramax mit der Position des Veranstaltungsorts, nicht mit deinem Standort.
 - Kartenlinks sind normale Links: Erst beim Anklicken erfährt der gewählte Kartendienst den Veranstaltungsort (und, wie bei jedem Seitenaufruf, die IP-Adresse). Es gilt dann dessen Datenschutzerklärung.
 - Die gewählte Darstellung, Kartenanzeige und „Öffnen in …“ liegen im `localStorage` (in der Mac-App im Speicher der App).
+- **Kalender verbinden:** Gespeichert werden nur Kalenderadresse, Veranstaltername, gewählter Ort (Name und Ortsmitte), Art, Code, Status und Zeitpunkte sowie der SHA-256-Wert des Verwaltungsschlüssels – keine E-Mail-Adresse, keine IP-Adresse. Der Schlüssel selbst liegt nur im `localStorage` des anmeldenden Browsers. Wer Umkreis öffentlich betreibt, sollte das in der Datenschutzerklärung nennen.
 
 ## Sicherheit
 
@@ -161,6 +196,7 @@ Was eingebaut ist – keine Zertifizierung, keine Garantie; Funde bitte melden.
 - **Daten aus Quellen gelten als nicht vertrauenswürdig.** Titel und Texte werden als reiner Text dargestellt (HTML wird entfernt), Links nur mit `http`/`https` übernommen. Unter jeder Originalanzeige steht, zu welcher Domain der Link führt (bei `http` mit Hinweis auf die unverschlüsselte Verbindung) – Umkreis prüft nicht, ob die Seite wirklich zum Veranstalter gehört. Internationalisierte Domains erscheinen in der `xn--`-Form, damit Doppelgänger-Domains auffallen.
 - **Abrufe von Bildadressen aus Fremddaten** (Panoramax-Vorschaubilder) gehen nur per `https` an öffentliche IP-Adressen; Adressen im eigenen Netz (127.0.0.1, 192.168.x.x usw.) werden auch dann abgelehnt, wenn ein öffentlicher Name dorthin zeigt.
 - **Missbrauchsschutz der API:** Pro Client 60 Anfragen auf einmal, danach 1 pro Sekunde, für alle zusammen 300 bzw. 5 pro Sekunde; darüber antwortet der Server mit `429` und `Retry-After`. Höchstens 5 Ortssuchen warten gleichzeitig auf Nominatim, weitere bekommen sofort die Städte-Schnellauswahl. Gleiche Anfragen, die gleichzeitig eintreffen, teilen sich einen Abruf bei der Quelle. Hinter einem eigenen Reverse-Proxy `TRUST_PROXY=1` setzen, damit jeder Client nach der vom Proxy gemeldeten Adresse (letzter `X-Forwarded-For`-Eintrag) zählt – nur, wenn der Server ausschließlich über diesen Proxy erreichbar ist; sonst teilen sich alle Clients ein Kontingent.
+- **Kalender verbinden – Missbrauchsschutz:** Abrufe der angemeldeten Adressen nur per `https`, nur an öffentliche IP-Adressen (auch nach jeder der höchstens 3 Weiterleitungen geprüft), ohne eigene Ports oder Zugangsdaten, höchstens 5 MB, 20 Sekunden. Anmeldungen: verstecktes Fangfeld gegen Bots, Zustimmung erforderlich, 5 pro Stunde je Client und 50 pro Stunde insgesamt, höchstens 100 unbestätigte und 500 Quellen, Prüfung je Quelle höchstens alle 30 Sekunden, doppelte Adressen werden abgelehnt, gesperrte Websites ebenfalls. Verwaltungsschlüssel werden in konstanter Zeit verglichen. Der Code belegt Kontrolle über den Kalender, nicht die Richtigkeit der Termine.
 - **Host-Prüfung** gegen DNS-Rebinding (`ALLOWED_HOSTS`, auf 127.0.0.1/localhost automatisch), strikte CSP, `Cross-Origin-Resource-Policy`/`-Opener-Policy: same-origin`, `nosniff`, `frame-ancestors 'none'`.
 - **Ortsangaben der Quellen** werden auf Plausibilität geprüft: `GEO` aus iCal-Feeds nur innerhalb Deutschlands und im Umkreis des Kalendergebiets (`area.radiusKm`). Ob eine plausible Position stimmt, kann Umkreis nicht prüfen.
 - **Standort** gilt als nicht vertrauenswürdige, grobe Angabe: Er wird überall auf ≈ 1 km gerundet (auch in der Mac-App, bevor er die Seite erreicht) und nur für die Umkreissuche benutzt. Ein vorgetäuschter Gerätestandort lässt sich nicht erkennen; er verändert nur die eigene Suche.

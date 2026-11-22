@@ -2,8 +2,10 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import { coarsen, isInGermanyBounds } from '../shared/geo.ts';
 import { DEFAULT_TILES } from '../shared/mapTiles.ts';
 import { buildProviders, type ServerConfig } from './config.ts';
+import { ConnectError, createConnectRegistry } from './connect.ts';
 import { createEventService } from './events.ts';
 import { createGeocoder } from './geocode.ts';
+import { publicOnlyFetch, withRedirects } from './publicFetch.ts';
 import { clientAddress, createRateLimiter, type RateLimit } from './rateLimit.ts';
 import { createStreetLevel, StreetLevelError } from './streetlevel.ts';
 import type { FetchFn, ProviderQuery } from './providers/types.ts';
@@ -67,9 +69,28 @@ async function readJson(req: IncomingMessage): Promise<unknown> {
 }
 
 /** Returns a handler that answers /api/* requests and resolves to false for anything else. */
-export function createApiHandler(cfg: ServerConfig, fetchFn: FetchFn = fetch, limits?: { client: RateLimit; shared: RateLimit }) {
+/** Sign-ups per client and hour; organisers need one or two, bots would need many. */
+const CONNECT_LIMIT: RateLimit = { capacity: 5, refillPerSec: 5 / 3600 };
+const CONNECT_ROUTES = new Set(['/api/connect', '/api/connect/check', '/api/connect/status', '/api/connect/remove']);
+
+/**
+ * `connectFetch` downloads addresses that organisers type in, so by default it reaches public https
+ * addresses only, follows at most 3 redirects and checks every hop.
+ */
+export function createApiHandler(
+  cfg: ServerConfig,
+  fetchFn: FetchFn = fetch,
+  limits?: { client: RateLimit; shared: RateLimit; connect?: RateLimit },
+  connectFetch: FetchFn = withRedirects(publicOnlyFetch, 3),
+) {
   const { providers, mode } = buildProviders(cfg, fetchFn);
-  const collect = createEventService(providers, mode);
+  const connect = cfg.connect
+    ? createConnectRegistry({ file: cfg.connect.file, approval: cfg.connect.approval, fetchFn: connectFetch, userAgent: cfg.appUserAgent })
+    : undefined;
+  const allProviders = connect ? () => [...providers, ...connect.providers()] : () => providers;
+  const currentMode = () => (mode === 'live' || (connect?.count() ?? 0) > 0 ? 'live' : 'unconfigured');
+  const collect = createEventService(allProviders, currentMode);
+  const connectLimit = createRateLimiter(limits?.connect ?? CONNECT_LIMIT, { capacity: 50, refillPerSec: 50 / 3600 });
   const geocode = createGeocoder(cfg.geocoderUrl, cfg.geocoderUserAgent, fetchFn);
   const streetLevel = createStreetLevel(cfg.appUserAgent, fetchFn);
   const rateLimit = createRateLimiter(limits?.client, limits?.shared);
@@ -80,8 +101,9 @@ export function createApiHandler(cfg: ServerConfig, fetchFn: FetchFn = fetch, li
 
     if (pathname === '/api/status' && req.method === 'GET') {
       send(res, 200, {
-        mode,
+        mode: currentMode(),
         sources: providers.map((p) => ({ id: p.id, name: p.name, kind: p.kind })),
+        connect: connect ? { enabled: true, approval: connect.approval, connected: connect.count() } : { enabled: false },
         map: cfg.mapTiles ?? DEFAULT_TILES,
         legal: cfg.legal ?? {},
       });
@@ -104,7 +126,7 @@ export function createApiHandler(cfg: ServerConfig, fetchFn: FetchFn = fetch, li
       res.end(img.body);
       return true;
     }
-    if (pathname !== '/api/events' && pathname !== '/api/geocode' && pathname !== '/api/streetlevel') {
+    if (pathname !== '/api/events' && pathname !== '/api/geocode' && pathname !== '/api/streetlevel' && !CONNECT_ROUTES.has(pathname)) {
       send(res, 404, { error: 'Nicht gefunden.' });
       return true;
     }
@@ -121,6 +143,30 @@ export function createApiHandler(cfg: ServerConfig, fetchFn: FetchFn = fetch, li
       body = await readJson(req);
     } catch {
       send(res, 400, { error: 'Ungültige Anfrage.' });
+      return true;
+    }
+
+    if (CONNECT_ROUTES.has(pathname)) {
+      if (!connect) {
+        send(res, 404, { error: 'Kalender verbinden ist auf diesem Server ausgeschaltet.' });
+        return true;
+      }
+      const b = (body && typeof body === 'object' ? body : {}) as Record<string, unknown>;
+      try {
+        if (pathname === '/api/connect') {
+          const wait = connectLimit(clientAddress(req.socket.remoteAddress, req.headers['x-forwarded-for'], cfg.trustProxy === true));
+          if (wait > 0) {
+            send(res, 429, { error: 'Zu viele Anmeldungen von hier. Bitte später erneut versuchen.', code: 'rate_limited' }, { 'Retry-After': String(wait) });
+            return true;
+          }
+          send(res, 201, connect.submit(body));
+        } else if (pathname === '/api/connect/check') send(res, 200, await connect.check(b.id, b.key));
+        else if (pathname === '/api/connect/status') send(res, 200, connect.get(b.id, b.key));
+        else send(res, 200, connect.remove(b.id, b.key));
+      } catch (err) {
+        if (!(err instanceof ConnectError)) throw err;
+        send(res, err.status, { error: err.message }, err.status === 429 ? { 'Retry-After': '30' } : {});
+      }
       return true;
     }
 
@@ -149,7 +195,7 @@ export function createApiHandler(cfg: ServerConfig, fetchFn: FetchFn = fetch, li
       send(res, 400, { error: parsed.error });
       return true;
     }
-    if (providers.length === 0) {
+    if (allProviders().length === 0) {
       send(res, 503, { error: 'Es ist keine Veranstaltungsquelle eingerichtet. Siehe README: Ticketmaster-Schlüssel oder iCal-Feeds konfigurieren.', code: 'no_sources' });
       return true;
     }

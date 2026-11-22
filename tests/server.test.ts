@@ -194,6 +194,7 @@ describe('API handler (no source configured)', () => {
     expect(await res.json()).toEqual({
       mode: 'unconfigured',
       sources: [],
+      connect: { enabled: false },
       map: { url: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png', host: 'tile.openstreetmap.org' },
       legal: {},
     });

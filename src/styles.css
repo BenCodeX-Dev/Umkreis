@@ -856,3 +856,24 @@ select {
 @media (max-width: 559px) {
   .facts > div { grid-template-columns: 5.6rem minmax(0, 1fr); gap: 4px 10px; }
 }
+
+/* Kalender verbinden */
+input[type='url'], input[type='text'] {
+  width: 100%; min-height: 44px; padding: 9px 12px; border-radius: var(--r);
+  border: 1px solid var(--line-strong); background: var(--field); color: var(--ink);
+  box-shadow: inset 0 1px 2px var(--edge);
+}
+input[type='url']:focus-visible, input[type='text']:focus-visible {
+  outline: none; border-color: var(--focus); box-shadow: 0 0 0 3px var(--gold-wash), 0 0 0 1px var(--focus);
+}
+.connect-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 12px; }
+.connect-item { display: grid; gap: 10px; padding: 14px 16px; border: 1px solid var(--line); border-radius: var(--r); background: var(--surface-2); }
+.connect-head { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; align-items: baseline; }
+.connect-url { overflow-wrap: anywhere; margin: 0; }
+.connect-state { font-size: .85rem; font-weight: 620; color: var(--muted); }
+.connect-state.is-active { color: var(--pine); }
+.connect-state.is-withdrawn, .connect-state.is-blocked { color: var(--error-ink); }
+.connect-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.connect-place { flex: 1; margin: 0; display: flex; align-items: center; gap: 6px; }
+.code-box { display: flex; align-items: center; gap: 8px; padding: 8px 8px 8px 12px; border: 1px dashed var(--line-strong); border-radius: var(--r); background: var(--field); }
+.code-box code { flex: 1; min-width: 0; overflow-wrap: anywhere; font-size: .9rem; }

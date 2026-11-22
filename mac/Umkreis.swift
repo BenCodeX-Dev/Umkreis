@@ -87,6 +87,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
     env["ALLOWED_HOSTS"] = "127.0.0.1:\(port),localhost:\(port)"
     env["EXIT_ON_STDIN_CLOSE"] = "1"
     env["ICS_FEEDS_FILE"] = supportDir.appendingPathComponent("feeds.json").path
+    env["SOURCES_FILE"] = supportDir.appendingPathComponent("sources.json").path
 
     let p = Process()
     p.executableURL = URL(fileURLWithPath: node)

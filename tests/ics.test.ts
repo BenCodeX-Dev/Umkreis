@@ -252,7 +252,7 @@ describe('createIcsProvider', () => {
       if (down) throw new TypeError('connect timeout');
       return ok();
     };
-    const p = createIcsProvider(feed, fetchFn, 60_000, 20);
+    const p = createIcsProvider(feed, fetchFn, { ttlMs: 60_000, failurePauseMs: 20 });
     await expect(p.fetchEvents(q)).rejects.toThrow('Stadt Musterstadt ist gerade nicht erreichbar.');
     await expect(p.fetchEvents(q)).rejects.toThrow('Stadt Musterstadt ist gerade nicht erreichbar.');
     expect(calls).toBe(1);

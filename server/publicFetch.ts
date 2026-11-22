@@ -110,3 +110,23 @@ export const publicOnlyFetch: FetchFn = (input, init) =>
     req.on('error', reject);
     req.end();
   });
+
+/**
+ * Follows up to `max` redirects, each one again through `fetchFn` (so every hop gets the same public-address
+ * check). Hops to http, to another port or with credentials in the address are refused.
+ */
+export function withRedirects(fetchFn: FetchFn, max = 3): FetchFn {
+  return async (input, init) => {
+    let url = new URL(input instanceof Request ? input.url : String(input));
+    for (let hop = 0; ; hop++) {
+      const res = await fetchFn(url.toString(), init);
+      const location = res.headers.get('location');
+      if (![301, 302, 303, 307, 308].includes(res.status) || !location) return res;
+      await res.body?.cancel().catch(() => {});
+      if (hop >= max) throw new TypeError('Zu viele Weiterleitungen.');
+      const next = new URL(location, url);
+      if (next.protocol !== 'https:' || next.port || next.username || next.password) throw new TypeError('Weiterleitung auf eine nicht erlaubte Adresse.');
+      url = next;
+    }
+  };
+}

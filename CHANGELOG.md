@@ -4,6 +4,8 @@
 
 ### Neu
 
+- **Kalender verbinden (für Veranstalter):** Vereine, Bühnen und Gemeinden melden ihren öffentlichen iCal-Kalender oder ihre Veranstaltungsseite über die Fußzeile an und belegen mit einem Code im Kalender (bzw. einem `<meta>`-Tag), dass er ihnen gehört. Danach erscheinen ihre Termine automatisch; fehlt der Code später, verschwinden sie. Verwaltung mit `npm run sources` (auflisten, freischalten, löschen, sperren), Freischaltung automatisch oder von Hand (`CONNECT_APPROVAL`).
+- **Veranstaltungsseiten mit schema.org-Angaben** als Quelle (`"format": "web"` in `config/feeds.json`): Termine aus JSON-LD-`Event`-Angaben, Art aus dem schema.org-Typ (z. B. `MusicEvent` → Konzert).
 - **Offene Daten von destination.one** als Quelle ohne Schlüssel, standardmäßig an (`DESTINATION_ONE=off` schaltet sie ab). Wiederkehrende Termine (wöchentliche Märkte, tägliche Ausstellungen, „jeden 1. Dienstag“) werden für den gewählten Zeitraum in einzelne Termine aufgelöst. Übernommen werden Einträge unter Public Domain, CC0, CC BY und CC BY-SA; bei CC BY / CC BY-SA nennt die Detailansicht Lizenz und Herkunft.
 - **Eigener Kartendienst:** `MAP_TILE_URL` und `MAP_TILE_ATTRIBUTION` ersetzen die OSM-Kacheln, z. B. für eine öffentliche Seite mit viel Verkehr. Nur `https`-Vorlagen mit `{z}`, `{x}`, `{y}`; der Host wird automatisch in die Content-Security-Policy übernommen und im Zustimmungstext genannt.
 - **Impressum und Datenschutzerklärung** als Links in der Fußzeile, aus `config/impressum.txt` und `config/datenschutz.txt` (Vorlagen liegen bei). Der Server warnt beim Start, wenn er öffentlich erreichbar ist und kein Impressum hat.
@@ -23,6 +25,7 @@
 
 ### Sicherheit
 
+- **Abrufe angemeldeter Kalender** nur per `https` an öffentliche Adressen, jede Weiterleitung (höchstens 3) erneut geprüft, keine eigenen Ports oder Zugangsdaten, höchstens 5 MB. Anmeldungen mit Fangfeld, Zustimmung, Ratenbegrenzung (5 pro Stunde je Client, 50 insgesamt) und Obergrenzen; Verwaltungsschlüssel nur als SHA-256-Wert gespeichert.
 - **Vorschaubilder nur von öffentlichen Adressen:** Bildadressen aus Panoramax-Daten werden nur per `https` an öffentliche IP-Adressen abgerufen (geprüft wird die DNS-Antwort, verbunden wird genau mit der geprüften Adresse). Vorher konnte eine präparierte Bildadresse den Server Anfragen ins lokale Netz stellen lassen. Eine Gegenstelle mit ungültigem HTTP-Status bringt den Server nicht mehr zum Absturz.
 - **Ratenbegrenzung** für alle API-Aufrufe, die Fremddienste erreichen (`429` mit `Retry-After`), und höchstens 5 wartende Ortssuchen. Hinter einem eigenen Reverse-Proxy zählt sie mit `TRUST_PROXY=1` pro Client. Gleichzeitige gleiche Anfragen teilen sich einen Abruf bei der Quelle.
 - **Host-Prüfung auch bei `npm start`:** Ohne `ALLOWED_HOSTS` gelten auf 127.0.0.1/localhost automatisch nur die eigenen Namen; auf anderen Adressen warnt der Server beim Start.

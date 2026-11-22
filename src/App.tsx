@@ -5,6 +5,7 @@ import type { CategoryId, EventItem, GeocodeResult } from '../shared/types.ts';
 import { DiscoverView } from './components/DiscoverView.tsx';
 import { Icon } from './components/Icon.tsx';
 import { InterestsDialog } from './components/InterestsDialog.tsx';
+import { ConnectDialog } from './components/ConnectDialog.tsx';
 import { LocationDialog } from './components/LocationDialog.tsx';
 import { Modal } from './components/Modal.tsx';
 import { Onboarding } from './components/Onboarding.tsx';
@@ -56,7 +57,7 @@ export function App() {
   const [radius, setRadius] = usePersistentState('umkreis.radius', 15, isRadius);
   const [interests, setInterests] = usePersistentState<CategoryId[]>('umkreis.interests', [], isCategoryList);
   const [saved, setSaved] = usePersistentState<Record<string, EventItem>>('umkreis.saved', {}, isSavedMap, sanitizeSaved);
-  const [dialog, setDialog] = useState<'location' | 'interests' | 'impressum' | 'privacy' | null>(null);
+  const [dialog, setDialog] = useState<'location' | 'interests' | 'impressum' | 'privacy' | 'connect' | null>(null);
   // undefined: still loading; null: server unreachable.
   const [status, setStatus] = useState<ServerStatus | null | undefined>(undefined);
   const [notice, notify] = useNotice();
@@ -271,10 +272,19 @@ export function App() {
           <p>
             <strong>Datenquellen:</strong>{' '}
             {status
-              ? status.sources.map((s) => s.name).join(', ') || 'keine'
+              ? [
+                  ...status.sources.map((s) => s.name),
+                  ...(status.connect.connected > 0 ? [`${status.connect.connected} von Veranstaltern verbundene Kalender`] : []),
+                ].join(', ') || 'keine'
               : 'unbekannt'}
             . Alle Angaben ohne Gewähr – maßgeblich ist die verlinkte Originalanzeige.
           </p>
+          {status?.connect.enabled && (
+            <p>
+              <strong>Für Veranstalter:</strong> Termine automatisch in Umkreis zeigen?{' '}
+              <button type="button" className="link-btn" onClick={() => setDialog('connect')}>Kalender verbinden</button>
+            </p>
+          )}
           <p>
             Ortssuche: Daten ©{' '}
             <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">OpenStreetMap-Mitwirkende</a>{' '}
@@ -311,6 +321,7 @@ export function App() {
         <div className="legal-text">{legal.privacy}</div>
       </Modal>
 
+      <ConnectDialog open={dialog === 'connect'} approval={status?.connect.approval} onClose={() => setDialog(null)} />
       <LocationDialog
         open={dialog === 'location'}
         home={home}

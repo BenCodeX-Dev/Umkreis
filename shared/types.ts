@@ -75,7 +75,7 @@ export interface EventRights {
 export interface SourceStatus {
   id: string;
   name: string;
-  kind: 'ticketmaster' | 'ics' | 'opendata';
+  kind: 'ticketmaster' | 'ics' | 'opendata' | 'web';
   ok: boolean;
   count: number;
   message?: string;
