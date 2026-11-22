@@ -9,6 +9,11 @@ updates:
     groups:
       dev-dependencies:
         dependency-type: development
+    ignore:
+      # typescript-eslint 8.73 accepts only typescript <6.1.0 (peer dependency); a newer typescript makes
+      # npm ci fail and would hold back the whole dev-dependencies group. Remove once typescript-eslint allows it.
+      - dependency-name: typescript
+        versions: ['>=6.1.0']
   - package-ecosystem: github-actions
     directory: /
     schedule:
