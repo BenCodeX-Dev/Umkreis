@@ -4,7 +4,7 @@
 
 ### Neu
 
-- **Offene Daten von destination.one** als Quelle ohne Schlüssel, standardmäßig an (`DESTINATION_ONE=off` schaltet sie ab). Wiederkehrende Termine (wöchentliche Märkte, tägliche Ausstellungen, „jeden 1. Dienstag“) werden für den gewählten Zeitraum in einzelne Termine aufgelöst. Nur Einträge unter Public Domain oder CC0 werden übernommen.
+- **Offene Daten von destination.one** als Quelle ohne Schlüssel, standardmäßig an (`DESTINATION_ONE=off` schaltet sie ab). Wiederkehrende Termine (wöchentliche Märkte, tägliche Ausstellungen, „jeden 1. Dienstag“) werden für den gewählten Zeitraum in einzelne Termine aufgelöst. Übernommen werden Einträge unter Public Domain, CC0, CC BY und CC BY-SA; bei CC BY / CC BY-SA nennt die Detailansicht Lizenz und Herkunft.
 - **Eigener Kartendienst:** `MAP_TILE_URL` und `MAP_TILE_ATTRIBUTION` ersetzen die OSM-Kacheln, z. B. für eine öffentliche Seite mit viel Verkehr. Nur `https`-Vorlagen mit `{z}`, `{x}`, `{y}`; der Host wird automatisch in die Content-Security-Policy übernommen und im Zustimmungstext genannt.
 - **Impressum und Datenschutzerklärung** als Links in der Fußzeile, aus `config/impressum.txt` und `config/datenschutz.txt` (Vorlagen liegen bei). Der Server warnt beim Start, wenn er öffentlich erreichbar ist und kein Impressum hat.
 - **Mac-App bringt Node.js mit:** `npm run mac` legt die offizielle Node.js-Version v26.13.1 (LTS, Apple Silicon) von nodejs.org bei, geprüft gegen eine festgeschriebene SHA-256-Prüfsumme. Die App läuft damit auf Macs ohne installiertes Node; auf Intel-Macs oder mit `UMKREIS_BUNDLE_NODE=0` wird weiter ein installiertes Node verwendet.
@@ -14,6 +14,12 @@
 
 - **Demo-Modus entfernt.** Ohne eingerichtete Quelle zeigt Umkreis keine erfundenen Beispiele mehr, sondern einen Hinweis, wie man einen Ticketmaster-Schlüssel oder iCal-Kalender einrichtet; die Liste bleibt leer. `DEMO_MODE` wird nicht mehr gelesen. Früher gemerkte Beispiel-Einträge werden beim Laden entfernt.
 - **Gemerkte Einträge:** Ein beschädigter Eintrag im Speicher verwirft nicht mehr die ganze Liste, sondern nur sich selbst.
+
+### Behoben
+
+- **„Heute“ zeigte bei destination.one fast nichts:** Die Schnittstelle liest das Enddatum als Tagesbeginn; Umkreis schickt jetzt den Folgetag (z. B. Dresden heute: 0 → 8 Termine, die übrigen Einträge der Quelle waren schon vorbei, liegen knapp außerhalb von 50 km oder sind doppelt).
+- **Ganz Deutschland zeigte nur wenige Regionen**, weil die ersten 300 Einträge der Quelle aus wenigen Gegenden kamen. Jetzt wird eine zufällige Auswahl abgefragt (belegte 1°-Felder: 21 → 38), der Hinweis „gekürzt“ sagt das.
+- **Ein nicht erreichbarer iCal-Kalender bremste jede Suche** um bis zu 20 s. Nach einem Fehler wird er 5 Minuten nicht gefragt, parallele Suchen teilen sich einen Download, und Kalender, deren Gebiet den Suchkreis nicht berührt, werden gar nicht erst gefragt (Dresden: erste Suche 10,6 s → 1,7 s).
 
 ### Sicherheit
 

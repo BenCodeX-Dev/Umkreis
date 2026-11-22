@@ -90,6 +90,17 @@ describe('event aggregation', () => {
     spy.mockRestore();
   });
 
+  it('does not ask sources that cannot cover the query, and that is no failure', async () => {
+    let asked = 0;
+    const far = { ...provider('far', async () => (asked++, { events: [] })), covers: () => false };
+    const r = await createEventService([far], 'live')(query);
+    expect(asked).toBe(0);
+    expect(r.sources).toEqual([]);
+    expect(r.allFailed).toBe(false);
+    const both = await createEventService([far, provider('near', async () => ({ events: [] }))], 'live')(query);
+    expect(both.sources.map((s) => s.id)).toEqual(['near']);
+  });
+
   it('stamps events with the download time and keeps same-time listings that name different venues', async () => {
     const here = { lat: 49.87, lon: 8.65 };
     const collect = createEventService([

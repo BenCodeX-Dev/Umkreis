@@ -132,6 +132,15 @@ export function EventDetail({ item, distanceSuffix, now, conflicts, sameSpot, op
                 ? 'Abrufzeit unbekannt.'
                 : `Zuletzt abgerufen: ${formatCheckedAt(fresh.at, now)}. Wann der Veranstalter den Eintrag zuletzt geändert hat, teilt die Quelle nicht mit.`}
             </span>
+            {e.rights && (
+              <span className="sub">
+                Angaben{e.rights.by ? ` von ${e.rights.by}` : ''} unter{' '}
+                <a href={e.rights.licenseUrl} target="_blank" rel="noopener noreferrer">{e.rights.license}</a>
+                {e.rights.shareAlike
+                  ? `, hier als reiner Text und ggf. gekürzt; diese Fassung steht ebenfalls unter ${e.rights.license}.`
+                  : ', hier als reiner Text und ggf. gekürzt.'}
+              </span>
+            )}
           </dd>
         </div>
       </dl>

@@ -123,6 +123,17 @@ describe('sanitizeEvent', () => {
     expect(sanitizeEvent({ ...ev(), locationRejected: true })?.locationRejected).toBe(true);
     expect(sanitizeEvent({ ...ev(), locationRejected: 'yes' })?.locationRejected).toBeUndefined();
   });
+  it('keeps licence terms only with a name and a safe link', () => {
+    const rights = { license: 'CC BY-SA', licenseUrl: 'https://creativecommons.org/cc-licenses/', by: 'Tourist-Info', shareAlike: true };
+    expect(sanitizeEvent({ ...ev(), rights })?.rights).toEqual(rights);
+    expect(sanitizeEvent({ ...ev(), rights: { ...rights, by: '', shareAlike: 'yes' } })?.rights).toEqual({
+      license: 'CC BY-SA',
+      licenseUrl: 'https://creativecommons.org/cc-licenses/',
+    });
+    expect(sanitizeEvent({ ...ev(), rights: { ...rights, licenseUrl: 'javascript:alert(1)' } })?.rights).toBeUndefined();
+    expect(sanitizeEvent({ ...ev(), rights: { ...rights, license: '' } })?.rights).toBeUndefined();
+    expect(sanitizeEvent({ ...ev(), rights: 'CC BY' })?.rights).toBeUndefined();
+  });
   it('never revives invented sample entries from the old demo mode', () => {
     expect(sanitizeEvent({ ...ev(), isDemo: true })).toBeNull();
     expect(sanitizeEvent({ ...ev(), source: 'demo' })).toBeNull();

@@ -103,12 +103,29 @@ describe('destination.one records', () => {
     expect(e.status).toBeUndefined();
   });
 
-  it('only uses public-domain and CC0 records', () => {
-    for (const value of ['CC-BY', 'CC-BY-SA', undefined]) {
-      const attributes = value ? [{ key: 'license', value }] : [];
-      expect(normalizeDestinationOneEvent(record({ attributes }), from, to)).toEqual([]);
+  it('uses PD and CC0 records without, CC BY and CC BY-SA records with licence terms, and skips the rest', () => {
+    const lic = (value?: string, over: Record<string, unknown> = {}) =>
+      normalizeDestinationOneEvent(record({ attributes: value ? [{ key: 'license', value }] : [], ...over }), from, to);
+    for (const value of [undefined, 'CC-BY-NC', 'proprietary', 'toString', '__proto__']) expect(lic(value)).toEqual([]);
+    for (const value of ['PD', 'CC0']) {
+      const out = lic(value);
+      expect(out).toHaveLength(2);
+      expect(out[0].rights).toBeUndefined();
     }
-    expect(normalizeDestinationOneEvent(record({ attributes: [{ key: 'license', value: 'CC0' }] }), from, to)).toHaveLength(2);
+    // No author or company: the host of the delivering system is named.
+    const by = lic('CC-BY', { author: '', company: '', source: { url: 'https://data.example.org/api/v4', value: 'Proxy' } });
+    expect(by).toHaveLength(2);
+    expect(by[0].rights).toEqual({ license: 'CC BY', licenseUrl: 'https://creativecommons.org/cc-licenses/', by: 'data.example.org' });
+    const sa = lic('CC-BY-SA', { author: '<b>Tourist-Info</b> Musterstadt' });
+    expect(sa[0].rights).toEqual({
+      license: 'CC BY-SA',
+      licenseUrl: 'https://creativecommons.org/cc-licenses/',
+      by: 'Tourist-Info Musterstadt',
+      shareAlike: true,
+    });
+    // An unusable source URL is not linked; its name is used instead, otherwise nothing is invented.
+    expect(lic('CC-BY', { source: { url: 'javascript:alert(1)', value: 'Regio-Daten' } })[0].rights?.by).toBe('Regio-Daten');
+    expect(lic('CC-BY')[0].rights?.by).toBeUndefined();
   });
 
   it('drops unusable records and rejects positions outside Germany', () => {
@@ -153,13 +170,23 @@ describe('destination.one provider', () => {
     expect(u.origin + u.pathname).toBe('https://meta.et4.de/rest.ashx/search/');
     expect(u.searchParams.get('experience')).toBe('open-data');
     expect(u.searchParams.get('startdate')).toBe('2026-11-23');
-    expect(u.searchParams.get('enddate')).toBe('2026-12-06');
+    // Exclusive: the API reads a bare end date as midnight at the start of that day.
+    expect(u.searchParams.get('enddate')).toBe('2026-12-07');
+    // A one-day window ("Heute") must still span that whole day.
+    const today = new URL(destinationOneUrl({ scope: 'de', from: new Date('2026-11-22T15:00:00Z'), to: new Date('2026-11-22T23:00:00Z') }));
+    expect([today.searchParams.get('startdate'), today.searchParams.get('enddate')]).toEqual(['2026-11-22', '2026-11-23']);
+    // Year and month roll over.
+    const nye = new URL(destinationOneUrl({ scope: 'de', from: new Date('2026-12-31T10:00:00Z'), to: new Date('2026-12-31T23:00:00Z') }));
+    expect(nye.searchParams.get('enddate')).toBe('2027-01-01');
     expect(u.searchParams.get('latitude')).toBe('49.87');
     expect(u.searchParams.get('distance')).toBe('25000');
     expect(u.searchParams.get('q')).toBe('title Markt OR x');
     const de = new URL(destinationOneUrl({ scope: 'de', from, to }));
     expect(de.searchParams.has('latitude')).toBe(false);
     expect(de.searchParams.has('q')).toBe(false);
+    // Germany-wide: a random page instead of the first page of one region; nearby searches stay sorted by distance.
+    expect(de.searchParams.get('sort')).toBe('random');
+    expect(u.searchParams.has('sort')).toBe(false);
   });
 
   const respond = (body: unknown, status = 200) => async () =>

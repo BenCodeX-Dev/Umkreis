@@ -43,7 +43,8 @@ export function createEventService(providers: EventProvider[], mode: SourceMode,
   }
 
   return async function collect(q: ProviderQuery): Promise<EventsResponse & { allFailed: boolean }> {
-    const settled = await Promise.allSettled(providers.map((p) => fromProvider(p, q)));
+    const active = providers.filter((p) => !p.covers || p.covers(q));
+    const settled = await Promise.allSettled(active.map((p) => fromProvider(p, q)));
     const sources: SourceStatus[] = [];
     let truncated = false;
     const seenIds = new Set<string>();
@@ -53,7 +54,7 @@ export function createEventService(providers: EventProvider[], mode: SourceMode,
     const events: EventItem[] = [];
 
     settled.forEach((r, i) => {
-      const p = providers[i];
+      const p = active[i];
       if (r.status === 'rejected') {
         const message = r.reason instanceof ProviderError ? r.reason.message : `${p.name} konnte nicht geladen werden.`;
         if (!(r.reason instanceof ProviderError)) console.error('[%s]', p.id, r.reason instanceof Error ? r.reason.message : r.reason);
@@ -90,7 +91,7 @@ export function createEventService(providers: EventProvider[], mode: SourceMode,
       events: events.slice(0, MAX_EVENTS),
       sources,
       truncated,
-      allFailed: providers.length > 0 && sources.every((s) => !s.ok),
+      allFailed: active.length > 0 && sources.every((s) => !s.ok),
     };
   };
 }

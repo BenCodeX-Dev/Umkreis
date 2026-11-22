@@ -2,7 +2,7 @@ import { isCategoryId } from '../../shared/categories.ts';
 import { isValidPoint } from '../../shared/geo.ts';
 import { DEFAULT_TILES, parseTileTemplate, type MapTiles } from '../../shared/mapTiles.ts';
 import { safeHttpUrl } from '../../shared/text.ts';
-import type { EventItem, EventsRequest, EventsResponse, GeocodeResponse, GeocodeResult, SourceMode, SourceStatus } from '../../shared/types.ts';
+import type { EventItem, EventRights, EventsRequest, EventsResponse, GeocodeResponse, GeocodeResult, SourceMode, SourceStatus } from '../../shared/types.ts';
 
 export class ApiError extends Error {
   code?: string;
@@ -15,6 +15,19 @@ export class ApiError extends Error {
 const isStr = (v: unknown): v is string => typeof v === 'string';
 
 /** Drops anything that does not look like a valid event instead of rendering broken cards. */
+function sanitizeRights(raw: unknown): EventRights | undefined {
+  if (!raw || typeof raw !== 'object') return undefined;
+  const r = raw as Record<string, unknown>;
+  const licenseUrl = safeHttpUrl(r.licenseUrl);
+  if (!isStr(r.license) || !r.license.trim() || r.license.length > 40 || !licenseUrl) return undefined;
+  return {
+    license: r.license,
+    licenseUrl,
+    by: isStr(r.by) && r.by.trim() ? r.by.slice(0, 120) : undefined,
+    shareAlike: r.shareAlike === true || undefined,
+  };
+}
+
 export function sanitizeEvent(raw: unknown): EventItem | null {
   if (!raw || typeof raw !== 'object') return null;
   const e = raw as Record<string, unknown>;
@@ -45,6 +58,7 @@ export function sanitizeEvent(raw: unknown): EventItem | null {
     url: safeHttpUrl(e.url),
     urlLabel: opt(e.urlLabel),
     status: e.status === 'cancelled' || e.status === 'postponed' || e.status === 'rescheduled' ? e.status : undefined,
+    rights: sanitizeRights(e.rights),
     checkedAt: isStr(e.checkedAt) && !Number.isNaN(Date.parse(e.checkedAt)) ? e.checkedAt : undefined,
   };
 }

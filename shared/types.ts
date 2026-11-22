@@ -53,11 +53,23 @@ export interface EventItem {
   /** Label for `url`, e.g. "Originalanzeige" or "Veranstaltungskalender". */
   urlLabel?: string;
   status?: EventStatus;
+  /** Licence terms the source attaches to this entry when they require credit (e.g. CC BY). */
+  rights?: EventRights;
   /**
    * When Umkreis last downloaded this entry from its source (ISO). It says nothing about when the
    * organiser last changed it.
    */
   checkedAt?: string;
+}
+
+export interface EventRights {
+  /** Short licence name as the source gives it, e.g. "CC BY-SA". */
+  license: string;
+  licenseUrl: string;
+  /** Rights holder or origin the source names (author, organisation or delivering system). */
+  by?: string;
+  /** Changed versions must be shared under the same licence. */
+  shareAlike?: boolean;
 }
 
 export interface SourceStatus {

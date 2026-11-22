@@ -2,7 +2,7 @@ import { inferCategory } from '../../shared/categories.ts';
 import { isInGermanyBounds } from '../../shared/geo.ts';
 import { isValidTimeZone, localDayKey, localParts, TZ, zonedToUtc } from '../../shared/time.ts';
 import { plainText, safeHttpUrl } from '../../shared/text.ts';
-import type { CategoryId, EventItem, EventStatus, GeoPoint } from '../../shared/types.ts';
+import type { CategoryId, EventItem, EventRights, EventStatus, GeoPoint } from '../../shared/types.ts';
 import { readTextCapped } from './ics.ts';
 import { ProviderError, type EventProvider, type FetchFn, type ProviderQuery } from './types.ts';
 
@@ -22,10 +22,28 @@ const MAX_RECURRING_SPAN_MS = 2 * DAY_MS;
 /** Day steps for all records of one request – plenty for real data, bounded for broken rules. */
 const MAX_STEPS_PER_REQUEST = 300_000;
 /**
- * Only records that may be reused without naming the author: public domain and CC0. Records under
- * CC BY / CC BY-SA are skipped, because most of them name no author to credit.
+ * Licences the open-data experience uses. PD and CC0 need no credit. CC BY / CC BY-SA entries carry
+ * `rights`, which the detail view shows: licence, the origin the record names, and that the text was
+ * shortened. The source does not say which CC version is meant, so the link goes to the CC overview.
+ * Anything else (or no licence) is skipped.
  */
-const OPEN_LICENSES = new Set(['PD', 'CC0']);
+const CC_OVERVIEW = 'https://creativecommons.org/cc-licenses/';
+const LICENSES: Record<string, Pick<EventRights, 'license' | 'shareAlike'> | null> = {
+  PD: null,
+  CC0: null,
+  'CC-BY': { license: 'CC BY' },
+  'CC-BY-SA': { license: 'CC BY-SA', shareAlike: true },
+};
+
+/** Who the record names as its origin: author, company, otherwise the host of the delivering system. */
+function rightsHolder(e: Obj): string | undefined {
+  const named = plainText(e.author, 120) ?? plainText(e.company, 120);
+  if (named) return named;
+  const src = obj(e.source);
+  const url = safeHttpUrl(src?.url);
+  if (url) return new URL(url).hostname;
+  return plainText(src?.value, 80);
+}
 
 type Obj = Record<string, unknown>;
 const obj = (v: unknown): Obj | undefined => (v && typeof v === 'object' && !Array.isArray(v) ? (v as Obj) : undefined);
@@ -208,7 +226,9 @@ export function normalizeDestinationOneEvent(raw: unknown, from: Date, to: Date,
   if (!id) return [];
   const attrs = arr(e.attributes).map(obj);
   const license = str(attrs.find((a) => a?.key === 'license')?.value);
-  if (!license || !OPEN_LICENSES.has(license)) return [];
+  if (!license || !Object.hasOwn(LICENSES, license)) return [];
+  const terms = LICENSES[license];
+  const rights: EventRights | undefined = terms ? { ...terms, licenseUrl: CC_OVERVIEW, by: rightsHolder(e) } : undefined;
   const country = str(e.country);
   if (country && !/^(deutschland|germany|de)$/i.test(country)) return [];
 
@@ -252,6 +272,7 @@ export function normalizeDestinationOneEvent(raw: unknown, from: Date, to: Date,
     url: web ?? ticket,
     urlLabel: web ? 'Website zur Veranstaltung' : ticket ? 'Kartenverkauf' : undefined,
     status,
+    rights,
   };
   return [...starts.entries()]
     .sort((a, b) => a[0] - b[0])
@@ -269,6 +290,12 @@ export function normalizeDestinationOneEvent(raw: unknown, from: Date, to: Date,
     });
 }
 
+/** YYYY-MM-DD of the Berlin calendar day after the one `at` falls on. */
+function dayAfter(at: Date): string {
+  const { y, m, d } = ymd(localDay(at.getTime(), TZ) + 1);
+  return `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+}
+
 /** Free text for the API's search; field syntax ("title:") and operators are removed. */
 const searchText = (text: string) => text.replace(/[^\p{L}\p{N}\s-]/gu, ' ').replace(/\s+/g, ' ').trim().slice(0, 80);
 
@@ -279,13 +306,19 @@ export function destinationOneUrl(q: ProviderQuery): string {
     template: 'ET2014A.json',
     limit: String(PAGE_SIZE),
     startdate: localDayKey(q.from),
-    enddate: localDayKey(new Date(q.to.getTime() - 1)),
+    // The API reads a bare `enddate` as midnight at the start of that day, so the day after the last day of the
+    // window is sent (startdate = enddate = today finds almost nothing). The extra hours are cut by our own filter.
+    enddate: dayAfter(new Date(q.to.getTime() - 1)),
   });
   if (q.center && q.radiusKm) {
     // The API sorts by distance from this point and keeps only results within `distance` metres.
     params.set('latitude', q.center.lat.toFixed(2));
     params.set('longitude', q.center.lon.toFixed(2));
     params.set('distance', String(Math.round(q.radiusKm * 1000)));
+  } else {
+    // Germany-wide there are far more than one page of entries; in the API's default order the first
+    // page comes from a handful of regions. A random sample spreads one page across the country.
+    params.set('sort', 'random');
   }
   const text = q.text ? searchText(q.text) : '';
   if (text) params.set('q', text);

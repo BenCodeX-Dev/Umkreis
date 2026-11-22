@@ -203,7 +203,11 @@ export function DiscoverView({ scope, home, radius, onRadiusChange, interests, n
                 </p>
               )}
               {shown.truncated && (
-                <p className="alert alert-info">Es gibt mehr Treffer als angezeigt. Grenze Zeitraum, Umkreis oder Suche ein.</p>
+                <p className="alert alert-info">
+                  {req?.scope === 'de'
+                    ? 'Für ganz Deutschland gibt es mehr Treffer als angezeigt; gezeigt wird eine zufällige Auswahl. Mehr Termine einer Gegend siehst du mit einer Stadt oder deinem Standort.'
+                    : 'Es gibt mehr Treffer als angezeigt. Grenze Zeitraum, Umkreis oder Suche ein.'}
+                </p>
               )}
               {groups.length === 0 ? (
                 <EmptyState

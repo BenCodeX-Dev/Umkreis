@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { expandOccurrences, parseIcs, unfold } from '../server/ics.ts';
-import { icsEventToItems, plausibleGeo, readTextCapped, validateFeed, type FeedConfig } from '../server/providers/ics.ts';
+import { createIcsProvider, icsEventToItems, plausibleGeo, readTextCapped, validateFeed, type FeedConfig } from '../server/providers/ics.ts';
+import type { ProviderQuery } from '../server/providers/types.ts';
 
 const cal = (...lines: string[]) => ['BEGIN:VCALENDAR', 'VERSION:2.0', ...lines, 'END:VCALENDAR'].join('\r\n');
 const vevent = (...lines: string[]) => ['BEGIN:VEVENT', ...lines, 'END:VEVENT'].join('\r\n');
@@ -226,5 +227,47 @@ describe('validateFeed', () => {
     expect(typeof validateFeed({ ...feed, area: { ...feed.area, radiusKm: 0 } })).toBe('string');
     expect(typeof validateFeed({ ...feed, area: { ...feed.area, radiusKm: '50' } })).toBe('string');
     expect(validateFeed({ ...feed, area: { ...feed.area, radiusKm: 120 } })).toMatchObject({ area: { radiusKm: 120 } });
+  });
+});
+
+describe('createIcsProvider', () => {
+  const q: ProviderQuery = { scope: 'de', from: new Date('2026-11-23T00:00:00Z'), to: new Date('2026-12-07T00:00:00Z') };
+  const ok = () => new Response(cal(vevent('UID:a', 'SUMMARY:Konzert', 'DTSTART:20261125T190000Z')), { status: 200 });
+
+  it('shares one download between parallel searches and caches the file', async () => {
+    let calls = 0;
+    const p = createIcsProvider(feed, async () => (calls++, ok()));
+    const [a, b] = await Promise.all([p.fetchEvents(q), p.fetchEvents(q)]);
+    await p.fetchEvents(q);
+    expect(calls).toBe(1);
+    expect(a.events).toHaveLength(1);
+    expect(b.events).toHaveLength(1);
+  });
+
+  it('does not ask a failing server again during the pause, then retries', async () => {
+    let calls = 0;
+    let down = true;
+    const fetchFn = async () => {
+      calls++;
+      if (down) throw new TypeError('connect timeout');
+      return ok();
+    };
+    const p = createIcsProvider(feed, fetchFn, 60_000, 20);
+    await expect(p.fetchEvents(q)).rejects.toThrow('Stadt Musterstadt ist gerade nicht erreichbar.');
+    await expect(p.fetchEvents(q)).rejects.toThrow('Stadt Musterstadt ist gerade nicht erreichbar.');
+    expect(calls).toBe(1);
+    down = false;
+    await new Promise((r) => setTimeout(r, 30));
+    expect((await p.fetchEvents(q)).events).toHaveLength(1);
+    expect(calls).toBe(2);
+  });
+
+  it('is only asked for searches that reach its area', () => {
+    const p = createIcsProvider(feed, async () => ok());
+    const { lat, lon } = feed.area!;
+    expect(p.covers?.(q)).toBe(true); // Germany-wide
+    expect(p.covers?.({ ...q, scope: 'local', center: { lat, lon }, radiusKm: 5 })).toBe(true);
+    expect(p.covers?.({ ...q, scope: 'local', center: { lat: 51.05, lon: 13.74 }, radiusKm: 50 })).toBe(false);
+    expect(createIcsProvider({ ...feed, area: undefined }, async () => ok()).covers?.({ ...q, scope: 'local', center: { lat: 51.05, lon: 13.74 }, radiusKm: 5 })).toBe(true);
   });
 });

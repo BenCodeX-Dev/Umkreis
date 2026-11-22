@@ -22,6 +22,8 @@ export interface EventProvider {
   name: string;
   kind: SourceStatus['kind'];
   fetchEvents(q: ProviderQuery): Promise<ProviderResult>;
+  /** false when this source cannot have anything for the query (e.g. a city calendar far away); it is then not asked. */
+  covers?(q: ProviderQuery): boolean;
 }
 
 export type FetchFn = typeof fetch;

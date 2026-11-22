@@ -114,12 +114,41 @@ export function icsEventToItems(feed: FeedConfig, ev: IcsEvent, from: Date, to: 
   }));
 }
 
-export function createIcsProvider(feed: FeedConfig, fetchFn: FetchFn = fetch, ttlMs = 15 * 60_000): EventProvider {
-  const cache = new TtlCache<{ events: IcsEvent[]; checkedAt: string }>(ttlMs, 1);
+type Loaded = { events: IcsEvent[]; checkedAt: string };
+
+/**
+ * `failurePauseMs`: after a failed download the feed is not asked again for this long. Without it, a calendar
+ * server that is down would hold up every search for the full timeout.
+ */
+export function createIcsProvider(feed: FeedConfig, fetchFn: FetchFn = fetch, ttlMs = 15 * 60_000, failurePauseMs = 5 * 60_000): EventProvider {
+  const cache = new TtlCache<Loaded>(ttlMs, 1);
   const tooLarge = () => new ProviderError(`${feed.name}: Kalenderdatei ist zu groß.`);
-  async function load(): Promise<{ events: IcsEvent[]; checkedAt: string }> {
+  let pending: Promise<Loaded> | undefined;
+  let failed: { error: ProviderError; until: number } | undefined;
+
+  function load(): Promise<Loaded> {
     const hit = cache.get('feed');
-    if (hit) return hit;
+    if (hit) return Promise.resolve(hit);
+    if (failed && Date.now() < failed.until) return Promise.reject(failed.error);
+    // Searches arriving while the file is being downloaded share that one download.
+    pending ??= download()
+      .then(
+        (loaded) => {
+          failed = undefined;
+          return loaded;
+        },
+        (err: unknown) => {
+          if (err instanceof ProviderError) failed = { error: err, until: Date.now() + failurePauseMs };
+          throw err;
+        },
+      )
+      .finally(() => {
+        pending = undefined;
+      });
+    return pending;
+  }
+
+  async function download(): Promise<Loaded> {
     let res: Response;
     try {
       // Some calendar servers build the file on request (szene-Radar Freiburg: ~13 s); the result is cached.
@@ -144,6 +173,13 @@ export function createIcsProvider(feed: FeedConfig, fetchFn: FetchFn = fetch, tt
     id: `ics:${feed.id}`,
     name: feed.name,
     kind: 'ics',
+    // Positions outside the feed's area are rejected, so a search circle that does not touch the area cannot
+    // match anything; the margin covers the search centre being rounded to ~1 km.
+    covers: (q) =>
+      !feed.area ||
+      !q.center ||
+      !q.radiusKm ||
+      distanceKm(q.center, feed.area) <= (feed.area.radiusKm ?? DEFAULT_AREA_RADIUS_KM) + q.radiusKm + 2,
     async fetchEvents(q) {
       const { events, checkedAt } = await load();
       const budget: ExpandBudget = { steps: MAX_STEPS_PER_REQUEST };
