@@ -346,7 +346,7 @@ export function createConnectRegistry(o: ConnectOptions) {
     if (!codeFound) {
       if (status === 'active' || status === 'waiting') status = 'withdrawn';
       message = format === 'ics'
-        ? 'Der Code steht noch nicht in der Beschreibung des Kalenders. Trag ihn dort ein (nicht bei einem einzelnen Termin), warte, bis dein Kalenderdienst die Datei aktualisiert, und prüfe dann erneut.'
+        ? 'Der Code steht noch nicht in der Beschreibung des Kalenders. Trag ihn dort ein (nicht bei einem einzelnen Termin; bei Nextcloud an den Kalendernamen anhängen), warte, bis dein Kalenderdienst die Datei aktualisiert, und prüfe dann erneut.'
         : `Der Code steht noch nicht im <meta>-Tag der Seite. Füge ihn wie angegeben in den <head> ein und prüfe dann erneut.`;
     } else if (format === 'web' && upcoming === 0 && !/application\/ld\+json/i.test(text)) {
       message = 'Der Code ist da, aber die Seite enthält keine Veranstaltungsdaten im schema.org-Format. Nutze stattdessen den iCal-Link deines Kalenders oder ein Kalender-Plugin, das schema.org-Daten ausgibt.';

@@ -151,7 +151,15 @@ Feed-Eintrag (`config/feeds.json`):
 Veranstalter melden ihren Kalender selbst an – Link „Kalender verbinden“ in der Fußzeile:
 
 1. Adresse eintragen: öffentlicher iCal-Link (`https://…`, `webcal://` wird zu `https://`) oder eine Veranstaltungsseite mit schema.org-Angaben. Dazu Name, Ort (für Termine ohne genaue Ortsangabe) und optional die Art der Veranstaltungen; bestätigen, dass die Termine veröffentlicht werden dürfen.
-2. Umkreis zeigt einen Code (`umkreis-…`). Der Veranstalter trägt ihn in die Beschreibung des Kalenders ein (iCal: `X-WR-CALDESC`; bei einzelnen Terminen zählt er nicht, weil manche Kalender Termine von allen annehmen) – bei Webseiten als `<meta name="umkreis-verification" content="umkreis-…">` im `<head>`. Gezählt werden nur echte `<meta>`-Elemente im `<head>`, nicht Text in Kommentaren oder Skripten. Damit ist belegt, dass er den Kalender bearbeiten kann.
+2. Umkreis zeigt einen Code (`umkreis-…`). Damit ist belegt, dass der Veranstalter den Kalender bearbeiten kann.
+   - **iCal:** Der Code muss auf Kalenderebene stehen, meist in der Beschreibung (`X-WR-CALDESC`) oder im Namen (`X-WR-CALNAME`). Bei einzelnen Terminen zählt er nicht, weil manche Kalender Termine von allen annehmen. Je Dienst:
+     - Google Kalender: Einstellungen des Kalenders → Beschreibung. An einem öffentlichen Kalender geprüft.
+     - Nextcloud und andere sabre/dav-Server: Die Datei enthält nur den Kalendernamen, also den Code an den Namen anhängen. Laut Quelltext.
+     - Outlook / Microsoft 365: Beschreibung oder Kalendername, laut Microsoft-Spezifikation [MS-OXCICAL]. An einem echten Kalender ungeprüft.
+     - The Events Calendar (WordPress): Name und Beschreibung der Datei kommen aus dem Website-Titel. Stattdessen die Veranstaltungsseite anmelden.
+     - Events Manager (WordPress): Die Datei hat weder Namen noch Beschreibung, deshalb ebenfalls die Veranstaltungsseite anmelden. Ob sie schema.org-Angaben ausgibt, ist ungeprüft.
+     - iCloud, Teamup, ChurchTools, Proton Calendar: ungeprüft. Zuerst die Beschreibung versuchen, sonst den Namen.
+   - **Webseiten:** als `<meta name="umkreis-verification" content="umkreis-…">` im `<head>`. Es zählen nur echte `<meta>`-Elemente im `<head>`, kein Text in Kommentaren oder Skripten.
 3. „Jetzt prüfen“: Findet Umkreis den Code, erscheinen die Termine (bei `CONNECT_APPROVAL=manual` erst nach Freischaltung). Der Code selbst wird aus Beschreibungen entfernt, bevor sie angezeigt werden.
 4. Verschwindet der Code später aus dem Kalender, verschwinden die Termine beim nächsten Abruf. „Verbindung beenden“ im selben Browser löscht die Anmeldung sofort; dieser Browser merkt sich dazu einen geheimen Schlüssel (auf dem Server liegt nur dessen SHA-256-Wert).
 

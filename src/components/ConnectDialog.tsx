@@ -211,7 +211,10 @@ function CodeSteps({ source }: { source: ConnectedSource }) {
       ) : (
         <p className="hint">
           Trag diesen Code in die Beschreibung des Kalenders ein (bei Google Kalender: Einstellungen des Kalenders → Beschreibung).
+          Bei Nextcloud gibt es keine Beschreibung; häng den Code dort an den Namen des Kalenders an.
           Ein Code bei einem einzelnen Termin zählt nicht, weil manche Kalender Termine von allen annehmen.
+          Bei WordPress-Erweiterungen wie The Events Calendar lässt sich die Kalenderdatei nicht beschriften; melde dort die
+          Veranstaltungsseite statt der .ics-Adresse an.
           Kalenderdienste aktualisieren ihre Datei oft erst nach einigen Minuten bis Stunden; danach „Jetzt prüfen“.
         </p>
       )}
@@ -275,7 +278,7 @@ function ConnectForm({ approval, onCreated }: { approval?: 'auto' | 'manual'; on
     <form className="stack-sm" onSubmit={submit}>
       <label className="label" htmlFor="cn-url">Adresse des Kalenders oder der Veranstaltungsseite</label>
       <input id="cn-url" type="url" required value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://… oder webcal://…" maxLength={500} />
-      <p className="hint">Am besten der öffentliche iCal-Link (endet oft auf .ics; bei Google Kalender: „Öffentliche Adresse im iCal-Format“). Nur https.</p>
+      <p className="hint">Am besten der öffentliche iCal-Link (endet oft auf .ics; bei Google Kalender: „Öffentliche Adresse im iCal-Format“). Bei WordPress-Kalendern die Veranstaltungsseite. Nur https.</p>
 
       <label className="label" htmlFor="cn-name">Name des Veranstalters</label>
       <input id="cn-name" type="text" required value={name} onChange={(e) => setName(e.target.value)} maxLength={80} placeholder="z. B. Kulturverein Musterstadt" />
