@@ -713,6 +713,8 @@ select {
 .segment:has(input:checked) { background: var(--accent); color: var(--on-accent); }
 .segment:has(input:focus-visible) { outline: 2px solid var(--focus); outline-offset: -4px; }
 .footer-inner p { max-width: 92ch; }
+.footer-legal { display: flex; flex-wrap: wrap; gap: 4px 18px; }
+.legal-text { white-space: pre-wrap; overflow-wrap: anywhere; max-width: 70ch; line-height: 1.55; }
 
 .toast:empty { display: none; }
 .toast {

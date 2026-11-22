@@ -1,6 +1,7 @@
 import { createReadStream, existsSync, statSync } from 'node:fs';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import path from 'node:path';
+import { DEFAULT_TILES } from '../shared/mapTiles.ts';
 
 const TYPES: Record<string, string> = {
   '.html': 'text/html; charset=utf-8',
@@ -19,13 +20,17 @@ const SECURITY_HEADERS = {
   'Cross-Origin-Opener-Policy': 'same-origin',
   'Referrer-Policy': 'strict-origin-when-cross-origin',
   'Permissions-Policy': 'geolocation=(self), camera=(), microphone=()',
-  'Content-Security-Policy':
-    "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: https://tile.openstreetmap.org; connect-src 'self'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'",
 };
 
+/** Images may come only from this server and the configured map tile host (validated by parseTileTemplate). */
+export function contentSecurityPolicy(tileHost: string): string {
+  return `default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: https://${tileHost}; connect-src 'self'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'`;
+}
+
 /** Serves the built SPA from `dir`, falling back to index.html; blocks path traversal. */
-export function createStaticHandler(dir: string) {
+export function createStaticHandler(dir: string, tileHost = DEFAULT_TILES.host) {
   const root = path.resolve(dir);
+  const headers = { ...SECURITY_HEADERS, 'Content-Security-Policy': contentSecurityPolicy(tileHost) };
   return function serve(req: IncomingMessage, res: ServerResponse): void {
     if (req.method !== 'GET' && req.method !== 'HEAD') {
       res.writeHead(405).end();
@@ -50,7 +55,7 @@ export function createStaticHandler(dir: string) {
     }
     const immutable = file.includes(`${path.sep}assets${path.sep}`);
     res.writeHead(200, {
-      ...SECURITY_HEADERS,
+      ...headers,
       'Content-Type': TYPES[path.extname(file)] ?? 'application/octet-stream',
       'Cache-Control': immutable ? 'public, max-age=31536000, immutable' : 'no-cache',
     });

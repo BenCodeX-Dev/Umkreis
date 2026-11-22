@@ -1,5 +1,6 @@
 import { isCategoryId } from '../../shared/categories.ts';
 import { isValidPoint } from '../../shared/geo.ts';
+import { DEFAULT_TILES, parseTileTemplate, type MapTiles } from '../../shared/mapTiles.ts';
 import { safeHttpUrl } from '../../shared/text.ts';
 import type { EventItem, EventsRequest, EventsResponse, GeocodeResponse, GeocodeResult, SourceMode, SourceStatus } from '../../shared/types.ts';
 
@@ -104,10 +105,20 @@ export async function geocodePlace(q: string, signal?: AbortSignal): Promise<Geo
   return { results, fallback: data?.fallback === true };
 }
 
+export interface LegalPages {
+  impressum?: string;
+  privacy?: string;
+}
+
 export interface ServerStatus {
   mode: SourceMode;
   sources: Array<{ id: string; name: string; kind: SourceStatus['kind'] }>;
+  /** Tile service the operator configured; missing in the answer means OpenStreetMap's public tiles. */
+  map: MapTiles;
+  legal: LegalPages;
 }
+
+const legalText = (v: unknown): string | undefined => (isStr(v) && v.trim() && v.length <= 64_000 ? v : undefined);
 
 export async function fetchStatus(signal?: AbortSignal): Promise<ServerStatus | null> {
   try {
@@ -115,7 +126,17 @@ export async function fetchStatus(signal?: AbortSignal): Promise<ServerStatus | 
     if (!res.ok) return null;
     const d = (await res.json()) as Partial<ServerStatus>;
     if ((d.mode !== 'live' && d.mode !== 'unconfigured') || !Array.isArray(d.sources)) return null;
-    return { mode: d.mode, sources: d.sources.filter((s) => s && isStr(s.name) && isStr(s.kind)) };
+    const m = d.map as Partial<MapTiles> | undefined;
+    const map = (m && isStr(m.url) && parseTileTemplate(m.url, isStr(m.attribution) ? m.attribution : undefined)) || DEFAULT_TILES;
+    const l = (d.legal ?? {}) as Record<string, unknown>;
+    const impressum = legalText(l.impressum);
+    const privacy = legalText(l.privacy);
+    return {
+      mode: d.mode,
+      sources: d.sources.filter((s) => s && isStr(s.name) && isStr(s.kind)),
+      map,
+      legal: { ...(impressum ? { impressum } : {}), ...(privacy ? { privacy } : {}) },
+    };
   } catch {
     return null;
   }

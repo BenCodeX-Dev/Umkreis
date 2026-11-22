@@ -36,12 +36,18 @@ Helles, warmes Tagesdesign im skandinavischen Stil (Leinen, Birke, Falunrot, Saf
 
 Kartenanzeige in der App und „Öffnen in …“ sind zwei getrennte Einstellungen (unten im Fuß der Seite). Kacheln, Bilder und Daten verschiedener Anbieter werden nie gemischt: Die eingebettete Karte nutzt nur OpenStreetMap, ein Klick auf „Öffnen in …“ übergibt nur das Ziel an den gewählten Dienst.
 
-| Anbieter | In der App | Öffnen in … | Straßenbilder | Voraussetzungen |
-|---|---|---|---|---|
-| **OpenStreetMap** | ✓ (Leaflet, Kacheln der OSM Foundation) | ✓ | über Panoramax, wo vorhanden | keine; Nutzungsregeln der [Tile Policy](https://operations.osmfoundation.org/policies/tiles/) (Namensnennung, kein Massenabruf) |
-| **Apple Karten** | – | ✓ (Standard auf dem Mac) | – | eingebettete Karte (MapKit JS) und Look Around bräuchten eine kostenpflichtige Apple-Developer-Mitgliedschaft und ein Token – nicht eingebaut |
-| **Google Maps** | – | ✓ | – | eingebettete Karte und Street View bräuchten einen API-Schlüssel mit Abrechnung; Street View darf laut Google nicht mit fremden Karten kombiniert werden – nicht eingebaut |
-| **HERE WeGo** | – | ✓ (nur bei genauer Position) | – | – |
+| Anbieter | Karte in der App | „Öffnen in …“ | Straßenbilder |
+|---|---|---|---|
+| **OpenStreetMap** | ✓ | ✓ | ✓ (Panoramax) |
+| **Apple Karten** | nein ¹ | ✓ (Standard) | nein ¹ |
+| **Google Maps** | nein ² | ✓ | nein ² |
+| **HERE WeGo** | nein | ✓ ³ | nein |
+
+1. Eingebettete Apple-Karte (MapKit JS) und Look Around bräuchten eine kostenpflichtige Apple-Developer-Mitgliedschaft und ein Token.
+2. Eingebettete Google-Karte und Street View bräuchten einen API-Schlüssel mit Abrechnung; Street View darf laut Google nicht mit fremden Karten kombiniert werden.
+3. Nur bei genauer Position.
+
+Die Karte in der App nutzt Leaflet mit Kacheln der OSM Foundation. Deren [Tile Policy](https://operations.osmfoundation.org/policies/tiles/) verlangt Namensnennung und verbietet Massenabruf – für eine öffentliche Seite mit vielen Besuchern einen eigenen Kacheldienst einstellen (`MAP_TILE_URL`, siehe „Öffentlich betreiben“).
 
 - **Karte erst nach Zustimmung.** Beim ersten Mal fragt Umkreis, ob Kacheln von den OSM-Servern geladen werden dürfen (die sehen IP-Adresse und Kartenausschnitt). „Keine Karte“ ist jederzeit wählbar.
 - **Öffnen in …** übergibt eine genaue Position (5 Nachkommastellen) oder – bei ungefährer Lage – eine Suche nach Ort und Adresse, mit Hinweis, den Treffer zu prüfen. Nie den eigenen Standort.
@@ -96,7 +102,18 @@ npm run build
 npm start                 # http://127.0.0.1:8787, liefert dist/ + /api mit strikter CSP
 ```
 
-Prüfen: `npm run check` (Typecheck, Lint, Tests, Build).
+Prüfen: `npm run check` (Typecheck, Lint, Tests, Build). Auf GitHub läuft dieselbe Prüfung bei jedem Push und Pull Request (Node 22.18 und aktuelles LTS); Dependabot schlägt wöchentlich Updates für npm-Pakete und Actions vor.
+
+## Öffentlich betreiben
+
+Umkreis ist ein einzelner Node-Prozess ohne Datenbank. Für eine Website, die andere nutzen:
+
+1. **Host mit dauerhaft laufendem Node ≥ 22.18** (eigener Server/VPS oder eine Plattform für Node-Dienste). Dort `npm ci && npm run build && npm start`, mit Prozess-Manager (z. B. systemd), der bei Absturz neu startet. Rein statisches Hosting reicht nicht – die API muss mitlaufen.
+2. **HTTPS:** TLS und HSTS am Reverse-Proxy (z. B. Caddy, nginx) oder an der Plattform. Server dahinter auf `HOST=127.0.0.1`, `ALLOWED_HOSTS=dein-name.de`, `TRUST_PROXY=1`.
+3. **Kartenkacheln:** Die freien Kacheln der OSM Foundation sind nicht für viel Verkehr gedacht. `MAP_TILE_URL` (nur `https`, mit `{z}`, `{x}`, `{y}`) und `MAP_TILE_ATTRIBUTION` auf einen eigenen oder gebuchten Kacheldienst setzen; dessen Host kommt automatisch in die CSP, Zustimmungstext und Fußzeile nennen ihn.
+4. **Ortssuche:** Der öffentliche Nominatim-Dienst erlaubt höchstens 1 Anfrage pro Sekunde für alle Besucher zusammen. `GEOCODER_USER_AGENT` mit Kontakt setzen; bei mehr Verkehr `GEOCODER_URL` auf einen eigenen oder gebuchten Nominatim-kompatiblen Dienst.
+5. **Impressum und Datenschutzerklärung:** `config/impressum.example.txt` → `config/impressum.txt` und `config/datenschutz.example.txt` → `config/datenschutz.txt` kopieren und ausfüllen. Sie erscheinen als Links in der Fußzeile. Ohne Impressum warnt der Server beim Start, wenn er nicht nur auf 127.0.0.1 läuft. Die Vorlagen beschreiben, was Umkreis selbst tut; Hoster-Protokolle und Rechtsgrundlagen selbst prüfen – keine Rechtsberatung.
+6. **Bedingungen der Quellen** prüfen: Ticketmaster-Nutzungsbedingungen, Lizenzen der iCal-Kalender; destination.one nur PD/CC0 (siehe unten).
 
 ## Datenquellen
 
@@ -125,7 +142,7 @@ Feed-Eintrag (`config/feeds.json`):
 - `area.radiusKm` (optional, 1–500, Standard 50): Wie weit Termine des Kalenders von der Ortsmitte entfernt liegen dürfen. Eine `GEO`-Angabe weiter weg – oder außerhalb Deutschlands – gilt als unplausibel (Tippfehler, vertauschte Werte, falsche Angaben) und wird nicht verwendet; der Termin bekommt dann die Ortsmitte als ungefähre Lage, und die Detailansicht sagt, warum. Für landesweite Kalender `radiusKm` entsprechend erhöhen.
 - Nur Feeds verwenden, deren Nutzung erlaubt ist (öffentlich angebotene Kalender-Abos). Kein Scraping.
 
-Weitere Variablen: siehe [.env.example](.env.example) (`GEOCODER_URL`, `GEOCODER_USER_AGENT`, `PORT`, `HOST`, `ALLOWED_HOSTS`, `TRUST_PROXY`). Wer `HOST` auf `0.0.0.0` oder eine öffentliche Adresse setzt, muss `ALLOWED_HOSTS` mit dem eigenen Hostnamen setzen – sonst warnt der Server beim Start und beantwortet jeden Hostnamen. Für den öffentlichen Nominatim-Dienst muss `GEOCODER_USER_AGENT` die eigene Installation mit Kontakt angeben.
+Weitere Variablen: siehe [.env.example](.env.example) (`GEOCODER_URL`, `GEOCODER_USER_AGENT`, `PORT`, `HOST`, `ALLOWED_HOSTS`, `TRUST_PROXY`, `MAP_TILE_URL`, `MAP_TILE_ATTRIBUTION`, `IMPRESSUM_FILE`, `PRIVACY_FILE`). Wer `HOST` auf `0.0.0.0` oder eine öffentliche Adresse setzt, muss `ALLOWED_HOSTS` mit dem eigenen Hostnamen setzen – sonst warnt der Server beim Start und beantwortet jeden Hostnamen. Für den öffentlichen Nominatim-Dienst muss `GEOCODER_USER_AGENT` die eigene Installation mit Kontakt angeben.
 
 ## Datenschutz
 
@@ -133,7 +150,7 @@ Weitere Variablen: siehe [.env.example](.env.example) (`GEOCODER_URL`, `GEOCODER
 - Koordinaten werden im Browser und auf dem Server auf 2 Nachkommastellen (≈ 1 km) gerundet, per POST übertragen (nie in URLs) und nicht protokolliert. Keine Rückwärts-Geokodierung.
 - Gespeichert wird der Standort nur mit Haken „Standort auf diesem Gerät merken“; „Standort entfernen“ löscht ihn. Interessen und gemerkte Veranstaltungen liegen nur im `localStorage` dieses Browsers.
 - Keine Cookies, keine Analyse, keine externen Schriften oder Skripte. Schriften (Newsreader, Instrument Sans) werden mit ausgeliefert.
-- Die eingebettete Karte lädt Kacheln erst nach Zustimmung von `tile.openstreetmap.org`; der OSM-Server sieht IP-Adresse und Kartenausschnitt, nicht den gespeicherten Standort. Straßenbilder werden erst auf Klick gesucht – der eigene Server fragt Panoramax mit der Position des Veranstaltungsorts, nicht mit deinem Standort.
+- Die eingebettete Karte lädt Kacheln erst nach Zustimmung von `tile.openstreetmap.org` (oder dem mit `MAP_TILE_URL` eingestellten Dienst); der Kachelserver sieht IP-Adresse und Kartenausschnitt, nicht den gespeicherten Standort. Straßenbilder werden erst auf Klick gesucht – der eigene Server fragt Panoramax mit der Position des Veranstaltungsorts, nicht mit deinem Standort.
 - Kartenlinks sind normale Links: Erst beim Anklicken erfährt der gewählte Kartendienst den Veranstaltungsort (und, wie bei jedem Seitenaufruf, die IP-Adresse). Es gilt dann dessen Datenschutzerklärung.
 - Die gewählte Darstellung, Kartenanzeige und „Öffnen in …“ liegen im `localStorage` (in der Mac-App im Speicher der App).
 

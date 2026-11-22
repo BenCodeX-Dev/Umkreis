@@ -1,0 +1,49 @@
+Vorlage – nach config/datenschutz.txt kopieren, alle Angaben in [eckigen Klammern] ergänzen und
+diese drei Zeilen löschen. Beschreibt, was Umkreis selbst tut; was dein Hoster oder Reverse-Proxy
+protokolliert, musst du ergänzen. Keine Rechtsberatung.
+
+Verantwortlich
+[Name, Anschrift, E-Mail – wie im Impressum]
+
+Aufruf der Website
+Beim Aufruf verarbeitet der Server technisch notwendig deine IP-Adresse, um die Seite auszuliefern.
+Umkreis selbst protokolliert nur Methode, Pfad (ohne Suchparameter), Statuscode und Dauer von
+API-Aufrufen, keine IP-Adressen und keine Standorte.
+[Zugriffsprotokolle des Hosters/Reverse-Proxys: welche Daten, wie lange gespeichert]
+Rechtsgrundlage: Art. 6 Abs. 1 lit. f DSGVO (sicherer Betrieb der Website).
+
+Standort und Suche
+Einen Standort gibst du nur auf Wunsch an (Ortssuche, Schnellauswahl oder Gerätestandort nach
+Zustimmung im Browser). Er wird schon im Browser auf etwa 1 km gerundet, im Hintergrund an diesen
+Server übertragen und nur für die Suche verwendet, nicht gespeichert und nicht protokolliert.
+Für die Suche fragt dieser Server die eingerichteten Veranstaltungsquellen ab:
+[eingerichtete Quellen eintragen, z. B. destination.one Open Data, Ticketmaster, iCal-Kalender]
+Dabei wird die gerundete Position mit dem Suchradius übermittelt, nicht deine IP-Adresse.
+Ortsnamen, die du eintippst, schickt dieser Server an den Suchdienst Nominatim der OpenStreetMap
+Foundation [bzw. den eingestellten Dienst], ebenfalls ohne deine IP-Adresse.
+
+Karte
+Die Karte lädt erst, wenn du „Karte anzeigen“ wählst. Dann lädt dein Browser Kartenkacheln direkt von
+[tile.openstreetmap.org (OpenStreetMap Foundation) bzw. dem eingestellten Kartendienst]. Dieser Dienst
+sieht dabei deine IP-Adresse und den angezeigten Kartenausschnitt.
+Rechtsgrundlage: Art. 6 Abs. 1 lit. a DSGVO (Einwilligung); „Keine Karte“ (Fußzeile, „Karte in der App“)
+widerruft sie für die Zukunft.
+
+Straßenbilder
+Nur auf Klick fragt dieser Server den Dienst Panoramax mit der Position des Veranstaltungsorts (nicht
+deinem Standort) nach Bildern. Vorschaubilder werden über diesen Server geladen.
+
+Links zu anderen Diensten
+„Öffnen in …“, Originalanzeigen und Teilen sind normale Links. Erst beim Anklicken erfährt der
+jeweilige Dienst den Veranstaltungsort und deine IP-Adresse; dort gilt dessen Datenschutzerklärung.
+
+Speicherung in deinem Browser
+Interessen, gemerkte Veranstaltungen, Darstellung, Karten-Einstellung und – nur wenn du es wählst –
+dein gerundeter Standort liegen im lokalen Speicher (localStorage) deines Browsers. Sie werden nicht
+an diesen Server übertragen, außer der Standort für eine Suche. Du kannst sie in der App oder über die
+Browser-Einstellungen löschen. Keine Cookies, keine Analyse- oder Werbedienste, keine externen Schriften.
+
+Deine Rechte
+Du hast das Recht auf Auskunft, Berichtigung, Löschung, Einschränkung der Verarbeitung,
+Datenübertragbarkeit und Widerspruch sowie auf Beschwerde bei einer Datenschutz-Aufsichtsbehörde,
+z. B. [zuständige Aufsichtsbehörde].

@@ -1,16 +1,21 @@
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { useEffect, useMemo, useRef } from 'react';
+import { DEFAULT_TILES, type MapTiles } from '../../shared/mapTiles.ts';
 import type { EventItem, GeoPoint } from '../../shared/types.ts';
 import { groupSpots, type MapSpot } from '../lib/spots.ts';
 
 /**
- * OpenStreetMap's public tile server. Usage policy (https://operations.osmfoundation.org/policies/tiles/):
+ * Default: OpenStreetMap's public tile server. Usage policy (https://operations.osmfoundation.org/policies/tiles/):
  * visible attribution, no bulk or offline downloading, honour caching. Nothing here prefetches tiles.
  */
-const TILE_URL = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
-const ATTRIBUTION =
+const OSM_ATTRIBUTION =
   '© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">OpenStreetMap-Mitwirkende</a>';
+
+/** Leaflet renders attribution as HTML; an operator's credit text is shown as plain text. */
+function escapeHtml(s: string): string {
+  return s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
+}
 const GERMANY: L.LatLngBoundsExpression = [
   [47.27, 5.87],
   [55.06, 15.04],
@@ -25,6 +30,7 @@ interface Props {
   onSelect: (id: string, from: 'map') => void;
   /** Changes whenever the search itself changes; the map then re-frames. */
   fitKey: string;
+  tiles?: MapTiles;
 }
 
 function pinLabel(s: MapSpot): string {
@@ -51,7 +57,7 @@ function pinIcon(s: MapSpot, selected: boolean): L.DivIcon {
   return L.divIcon({ className: cls, html: n > 1 ? `<span>${n > 99 ? '99+' : n}</span>` : '', iconSize: [size, size] });
 }
 
-export default function EventMap({ events, center, radiusKm, selectedId, onSelect, fitKey }: Props) {
+export default function EventMap({ events, center, radiusKm, selectedId, onSelect, fitKey, tiles = DEFAULT_TILES }: Props) {
   const el = useRef<HTMLDivElement>(null);
   const map = useRef<L.Map | null>(null);
   const pins = useRef<L.LayerGroup | null>(null);
@@ -67,7 +73,7 @@ export default function EventMap({ events, center, radiusKm, selectedId, onSelec
     if (!el.current) return;
     const m = L.map(el.current, { minZoom: 5, maxZoom: 19, zoomSnap: 0.5, scrollWheelZoom: true });
     m.attributionControl.setPrefix('<a href="https://leafletjs.com" target="_blank" rel="noopener noreferrer">Leaflet</a>');
-    L.tileLayer(TILE_URL, { maxZoom: 19, attribution: ATTRIBUTION }).addTo(m);
+    L.tileLayer(tiles.url, { maxZoom: 19, attribution: tiles.attribution ? escapeHtml(tiles.attribution) : OSM_ATTRIBUTION }).addTo(m);
     m.fitBounds(GERMANY);
     overlay.current = L.layerGroup().addTo(m);
     pins.current = L.layerGroup().addTo(m);
@@ -79,6 +85,9 @@ export default function EventMap({ events, center, radiusKm, selectedId, onSelec
       m.remove();
       map.current = pins.current = overlay.current = null;
     };
+    // Built once per mount: MapPanel mounts the map only after the server status arrived, and the tile service
+    // does not change during a page load.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Search area: the circle the server filtered by.

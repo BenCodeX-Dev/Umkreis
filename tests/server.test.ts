@@ -180,7 +180,12 @@ describe('API handler (no source configured)', () => {
 
   it('reports that no source is set up', async () => {
     const res = await fetch(`${base}/api/status`);
-    expect(await res.json()).toEqual({ mode: 'unconfigured', sources: [] });
+    expect(await res.json()).toEqual({
+      mode: 'unconfigured',
+      sources: [],
+      map: { url: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png', host: 'tile.openstreetmap.org' },
+      legal: {},
+    });
   });
 
   it('returns no events at all instead of invented ones', async () => {

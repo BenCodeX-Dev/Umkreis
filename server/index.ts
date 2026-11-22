@@ -2,7 +2,7 @@ import http from 'node:http';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createApiHandler } from './api.ts';
-import { effectiveAllowedHosts, loadServerConfig } from './config.ts';
+import { effectiveAllowedHosts, isLoopbackHost, loadServerConfig } from './config.ts';
 import { createStaticHandler } from './static.ts';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -10,10 +10,13 @@ const config = loadServerConfig(process.env, root);
 config.warnings.forEach((w) => console.warn(`Warnung: ${w}`));
 
 const api = createApiHandler(config);
-const serveStatic = createStaticHandler(path.join(root, 'dist'));
+const serveStatic = createStaticHandler(path.join(root, 'dist'), config.mapTiles?.host);
 const port = Number(process.env.PORT) || 8787;
 const host = process.env.HOST || '127.0.0.1';
 const allowedHosts = effectiveAllowedHosts(config, host, port);
+if (!isLoopbackHost(host) && !config.legal?.impressum) {
+  console.warn('Warnung: Öffentlich erreichbar, aber ohne Impressum (config/impressum.txt) – für öffentliche Websites in Deutschland meist Pflicht.');
+}
 if (!allowedHosts) console.warn(`Warnung: HOST=${host} ohne ALLOWED_HOSTS – Anfragen unter jedem Hostnamen werden beantwortet.`);
 
 // The macOS app keeps our stdin open; when the app quits or crashes the pipe closes and the server follows.
@@ -44,6 +47,6 @@ http
       });
   })
   .listen(port, host, () => {
-    const sources = [config.ticketmasterKey && 'Ticketmaster', config.feeds.length && `${config.feeds.length} iCal-Feed(s)`].filter(Boolean);
+    const sources = [config.openData && 'destination.one', config.ticketmasterKey && 'Ticketmaster', config.feeds.length && `${config.feeds.length} iCal-Feed(s)`].filter(Boolean);
     console.log(`Umkreis läuft auf http://${host}:${port} – Quellen: ${sources.join(', ') || 'keine – TICKETMASTER_API_KEY oder iCal-Feeds einrichten (siehe README)'}`);
   });

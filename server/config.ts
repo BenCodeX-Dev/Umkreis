@@ -1,8 +1,9 @@
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { createDestinationOneProvider } from './providers/destinationone.ts';
 import { createIcsProvider, validateFeed, type FeedConfig } from './providers/ics.ts';
 import { createTicketmasterProvider } from './providers/ticketmaster.ts';
+import { parseTileTemplate, type MapTiles } from '../shared/mapTiles.ts';
 import type { SourceMode } from '../shared/types.ts';
 import type { EventProvider, FetchFn } from './providers/types.ts';
 
@@ -19,6 +20,10 @@ export interface ServerConfig {
   allowedHosts?: string[];
   /** Count rate limits by X-Forwarded-For (set TRUST_PROXY=1 only behind your own reverse proxy). */
   trustProxy?: boolean;
+  /** Tile service for the in-app map (MAP_TILE_URL); missing means OpenStreetMap's public tiles. */
+  mapTiles?: MapTiles;
+  /** Plain-text legal pages shown in the footer (config/impressum.txt, config/datenschutz.txt). */
+  legal?: { impressum?: string; privacy?: string };
   warnings: string[];
 }
 
@@ -40,6 +45,17 @@ export function loadServerConfig(env: Env, root = process.cwd()): ServerConfig {
       warnings.push(`${path.basename(feedsFile)} ist kein gültiges JSON – iCal-Feeds deaktiviert.`);
     }
   }
+  let mapTiles: MapTiles | undefined;
+  if (env.MAP_TILE_URL?.trim()) {
+    mapTiles = parseTileTemplate(env.MAP_TILE_URL, env.MAP_TILE_ATTRIBUTION) ?? undefined;
+    if (!mapTiles) warnings.push('MAP_TILE_URL ist ungültig (nur https, mit {z}, {x} und {y}) – die Karte nutzt OpenStreetMap.');
+    else if (!mapTiles.attribution) warnings.push('MAP_TILE_ATTRIBUTION fehlt – die meisten Kacheldienste verlangen eine sichtbare Namensnennung.');
+  }
+  const legal = {
+    impressum: readLegalText(root, env.IMPRESSUM_FILE, 'config/impressum.txt', 'IMPRESSUM_FILE', warnings),
+    privacy: readLegalText(root, env.PRIVACY_FILE, 'config/datenschutz.txt', 'PRIVACY_FILE', warnings),
+  };
+
   return {
     openData: !/^(0|off|false|no|aus)$/i.test(env.DESTINATION_ONE?.trim() ?? ''),
     ticketmasterKey: env.TICKETMASTER_API_KEY?.trim() || undefined,
@@ -49,8 +65,32 @@ export function loadServerConfig(env: Env, root = process.cwd()): ServerConfig {
     appUserAgent: env.APP_USER_AGENT || 'Umkreis/0.2 (self-hosted local events app)',
     allowedHosts: env.ALLOWED_HOSTS?.split(',').map((h) => h.trim().toLowerCase()).filter(Boolean) || undefined,
     trustProxy: env.TRUST_PROXY === '1' || env.TRUST_PROXY === 'true',
+    mapTiles,
+    legal: legal.impressum || legal.privacy ? legal : undefined,
     warnings,
   };
+}
+
+const LEGAL_MAX_BYTES = 64_000;
+
+/** Reads an optional plain-text page. The default path may be missing; an explicitly set one should exist. */
+function readLegalText(root: string, setPath: string | undefined, fallback: string, name: string, warnings: string[]): string | undefined {
+  const file = path.resolve(root, setPath?.trim() || fallback);
+  if (!existsSync(file)) {
+    if (setPath?.trim()) warnings.push(`${name}: ${path.basename(file)} nicht gefunden.`);
+    return undefined;
+  }
+  if (statSync(file).size > LEGAL_MAX_BYTES) {
+    warnings.push(`${name}: ${path.basename(file)} ist größer als 64 KB und wird nicht angezeigt.`);
+    return undefined;
+  }
+  const text = readFileSync(file, 'utf8').replace(/\r\n?/g, '\n').trim();
+  return text || undefined;
+}
+
+/** True when the server only listens on this machine (no Impressum needed, no public visitors). */
+export function isLoopbackHost(host: string): boolean {
+  return LOOPBACK.has(host);
 }
 
 const LOOPBACK = new Set(['127.0.0.1', 'localhost', '::1']);

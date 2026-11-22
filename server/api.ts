@@ -1,5 +1,6 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { coarsen, isInGermanyBounds } from '../shared/geo.ts';
+import { DEFAULT_TILES } from '../shared/mapTiles.ts';
 import { buildProviders, type ServerConfig } from './config.ts';
 import { createEventService } from './events.ts';
 import { createGeocoder } from './geocode.ts';
@@ -78,7 +79,12 @@ export function createApiHandler(cfg: ServerConfig, fetchFn: FetchFn = fetch, li
     if (!pathname.startsWith('/api/')) return false;
 
     if (pathname === '/api/status' && req.method === 'GET') {
-      send(res, 200, { mode, sources: providers.map((p) => ({ id: p.id, name: p.name, kind: p.kind })) });
+      send(res, 200, {
+        mode,
+        sources: providers.map((p) => ({ id: p.id, name: p.name, kind: p.kind })),
+        map: cfg.mapTiles ?? DEFAULT_TILES,
+        legal: cfg.legal ?? {},
+      });
       return true;
     }
     // Everything below may call a third-party service, so it counts against the rate limit.

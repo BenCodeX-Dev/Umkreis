@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useState } from 'react';
 import { isCategoryId } from '../shared/categories.ts';
+import { DEFAULT_TILES } from '../shared/mapTiles.ts';
 import type { CategoryId, EventItem, GeocodeResult } from '../shared/types.ts';
 import { DiscoverView } from './components/DiscoverView.tsx';
 import { Icon } from './components/Icon.tsx';
 import { InterestsDialog } from './components/InterestsDialog.tsx';
 import { LocationDialog } from './components/LocationDialog.tsx';
+import { Modal } from './components/Modal.tsx';
 import { Onboarding } from './components/Onboarding.tsx';
 import { SavedView } from './components/SavedView.tsx';
 import { useHashRoute, useNotice, useNow, usePersistentState, useTheme, type Route } from './hooks/hooks.ts';
@@ -54,8 +56,9 @@ export function App() {
   const [radius, setRadius] = usePersistentState('umkreis.radius', 15, isRadius);
   const [interests, setInterests] = usePersistentState<CategoryId[]>('umkreis.interests', [], isCategoryList);
   const [saved, setSaved] = usePersistentState<Record<string, EventItem>>('umkreis.saved', {}, isSavedMap, sanitizeSaved);
-  const [dialog, setDialog] = useState<'location' | 'interests' | null>(null);
-  const [status, setStatus] = useState<ServerStatus | null>(null);
+  const [dialog, setDialog] = useState<'location' | 'interests' | 'impressum' | 'privacy' | null>(null);
+  // undefined: still loading; null: server unreachable.
+  const [status, setStatus] = useState<ServerStatus | null | undefined>(undefined);
   const [notice, notify] = useNotice();
   const { pref: themePref, setPref: setThemePref, theme } = useTheme();
   const [mapView, setMapView] = usePersistentState<InAppMap | null>(MAP_VIEW_KEY, null, isInAppMapPref);
@@ -137,13 +140,18 @@ export function App() {
 
   const savedList = Object.values(saved);
   const cardActions = { isSaved, onToggleSave, onShare };
+  const tiles = status === undefined ? undefined : (status?.map ?? DEFAULT_TILES);
+  const tileCredit = !tiles || tiles.host === DEFAULT_TILES.host ? 'Kacheln der OpenStreetMap Foundation' : `Kacheln von ${tiles.attribution ?? tiles.host}`;
+  const legal = status?.legal ?? {};
+
   const common = {
     ...cardActions,
     radius,
     onRadiusChange: setRadius,
     interests,
     now,
-    status,
+    status: status ?? null,
+    tiles,
     home,
     onEditLocation: () => setDialog('location'),
     onEditInterests: () => setDialog('interests'),
@@ -270,7 +278,7 @@ export function App() {
           <p>
             Ortssuche: Daten ©{' '}
             <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">OpenStreetMap-Mitwirkende</a>{' '}
-            (ODbL), über Nominatim. Karte: Kacheln der OpenStreetMap Foundation. Straßenbilder: Panoramax
+            (ODbL), über Nominatim. Karte: {tileCredit}. Straßenbilder: Panoramax
             (Lizenz je Bild, meist CC BY-SA 4.0).
           </p>
           <p>
@@ -278,13 +286,30 @@ export function App() {
             nur im Hintergrund an den eigenen Server übermittelt und nur nach deiner Zustimmung lokal gespeichert. Interessen,
             gemerkte Veranstaltungen und die Darstellung bleiben in diesem Browser. Kartenlinks übergeben dem gewählten Kartendienst
             nur den Veranstaltungsort, nie deinen Standort. Die Karte lädt erst nach deiner Zustimmung Kacheln von
-            tile.openstreetmap.org – dabei sehen deren Server deine IP-Adresse und den Kartenausschnitt. Straßenbilder werden nur
-            auf Knopfdruck über den eigenen Server bei Panoramax gesucht, mit der Position des Veranstaltungsorts.
+            {tiles?.host ?? DEFAULT_TILES.host} – dabei sehen deren Server deine IP-Adresse und den Kartenausschnitt. Straßenbilder
+            werden nur auf Knopfdruck über den eigenen Server bei Panoramax gesucht, mit der Position des Veranstaltungsorts.
           </p>
+          {(legal.impressum || legal.privacy) && (
+            <p className="footer-legal">
+              {legal.impressum && (
+                <button type="button" className="link-btn" onClick={() => setDialog('impressum')}>Impressum</button>
+              )}
+              {legal.privacy && (
+                <button type="button" className="link-btn" onClick={() => setDialog('privacy')}>Datenschutzerklärung</button>
+              )}
+            </p>
+          )}
         </div>
       </footer>
 
       <p className="toast" role="status" aria-live="polite">{notice}</p>
+
+      <Modal open={dialog === 'impressum'} title="Impressum" onClose={() => setDialog(null)}>
+        <div className="legal-text">{legal.impressum}</div>
+      </Modal>
+      <Modal open={dialog === 'privacy'} title="Datenschutzerklärung" onClose={() => setDialog(null)}>
+        <div className="legal-text">{legal.privacy}</div>
+      </Modal>
 
       <LocationDialog
         open={dialog === 'location'}

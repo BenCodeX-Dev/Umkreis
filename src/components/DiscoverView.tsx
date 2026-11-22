@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { CITIES } from '../../shared/cities.ts';
+import type { MapTiles } from '../../shared/mapTiles.ts';
 import type { CategoryId, EventItem, EventsRequest, GeocodeResult } from '../../shared/types.ts';
 import { navigateTo, useDebouncedValue } from '../hooks/hooks.ts';
 import { useEvents } from '../hooks/useEvents.ts';
@@ -29,6 +30,8 @@ interface Props extends CardActions {
   interests: CategoryId[];
   now: Date;
   status: ServerStatus | null;
+  /** Map tile service; undefined while the server status is loading. */
+  tiles?: MapTiles;
   onEditLocation: () => void;
   onEditInterests: () => void;
   mapView: InAppMap | null;
@@ -41,7 +44,7 @@ interface Props extends CardActions {
 const reducedMotion = () => typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
 const cardSelector = (id: string) => `[data-event-id="${CSS.escape(id)}"]`;
 
-export function DiscoverView({ scope, home, radius, onRadiusChange, interests, now, status, onEditLocation, onEditInterests, mapView, onMapView, openIn, onResults, ...actions }: Props) {
+export function DiscoverView({ scope, home, radius, onRadiusChange, interests, now, status, tiles, onEditLocation, onEditInterests, mapView, onMapView, openIn, onResults, ...actions }: Props) {
   const [selected, setSelected] = useState<{ id: string; token: number } | null>(null);
   const [filters, setFilters] = useState<Filters>({ range: scope === 'local' ? 'heute' : '7tage', categories: [], text: '', sort: 'zeit' });
   const [city, setCity] = useState<GeocodeResult | null>(null);
@@ -233,6 +236,7 @@ export function DiscoverView({ scope, home, radius, onRadiusChange, interests, n
           <MapPanel
             pref={mapView}
             onPref={onMapView}
+            tiles={tiles}
             events={mapEvents}
             center={mapCenter}
             radiusKm={mapRadius}

@@ -2,6 +2,8 @@ node_modules
 dist
 .env
 config/feeds.json
+config/impressum.txt
+config/datenschutz.txt
 *.tsbuildinfo
 .claude/
 .DS_Store

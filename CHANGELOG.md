@@ -5,6 +5,9 @@
 ### Neu
 
 - **Offene Daten von destination.one** als Quelle ohne Schlüssel, standardmäßig an (`DESTINATION_ONE=off` schaltet sie ab). Wiederkehrende Termine (wöchentliche Märkte, tägliche Ausstellungen, „jeden 1. Dienstag“) werden für den gewählten Zeitraum in einzelne Termine aufgelöst. Nur Einträge unter Public Domain oder CC0 werden übernommen.
+- **Eigener Kartendienst:** `MAP_TILE_URL` und `MAP_TILE_ATTRIBUTION` ersetzen die OSM-Kacheln, z. B. für eine öffentliche Seite mit viel Verkehr. Nur `https`-Vorlagen mit `{z}`, `{x}`, `{y}`; der Host wird automatisch in die Content-Security-Policy übernommen und im Zustimmungstext genannt.
+- **Impressum und Datenschutzerklärung** als Links in der Fußzeile, aus `config/impressum.txt` und `config/datenschutz.txt` (Vorlagen liegen bei). Der Server warnt beim Start, wenn er öffentlich erreichbar ist und kein Impressum hat.
+- **GitHub-Prüfung:** `npm audit` und `npm run check` bei jedem Push und Pull Request auf Node 22.18 und aktuellem LTS; Dependabot für npm-Pakete und Actions.
 
 ### Geändert
 

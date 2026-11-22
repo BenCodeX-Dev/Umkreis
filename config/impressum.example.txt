@@ -1,0 +1,18 @@
+Vorlage – nach config/impressum.txt kopieren, alle Angaben in [eckigen Klammern] ersetzen und
+diese zwei Zeilen löschen. Keine Rechtsberatung: Umfang der Pflichtangaben im Zweifel prüfen lassen.
+
+Angaben gemäß § 5 DDG
+
+[Vor- und Nachname bzw. Name der Organisation]
+[Straße und Hausnummer]
+[PLZ Ort]
+
+Kontakt
+E-Mail: [E-Mail-Adresse]
+[Telefon oder ein weiterer schneller elektronischer Kontaktweg]
+
+[Falls zutreffend: Vertretungsberechtigte Person, Registergericht und -nummer, Umsatzsteuer-ID]
+
+Haftung für Inhalte
+Die Veranstaltungsangaben stammen aus den in der Fußzeile genannten Quellen und werden automatisch
+übernommen. Maßgeblich ist jeweils die verlinkte Originalanzeige; alle Angaben ohne Gewähr.

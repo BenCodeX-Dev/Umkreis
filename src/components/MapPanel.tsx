@@ -1,4 +1,5 @@
 import { lazy, Suspense } from 'react';
+import { DEFAULT_TILES, type MapTiles } from '../../shared/mapTiles.ts';
 import type { EventItem, GeoPoint } from '../../shared/types.ts';
 import type { InAppMap } from '../lib/mapPrefs.ts';
 import { Icon } from './Icon.tsx';
@@ -15,9 +16,11 @@ interface Props {
   selectedId?: string;
   onSelect: (id: string, from: 'map') => void;
   fitKey: string;
+  /** Undefined while the server status is still loading – no tile request goes out before the host is known. */
+  tiles?: MapTiles;
 }
 
-export function MapPanel({ pref, onPref, ...map }: Props) {
+export function MapPanel({ pref, onPref, tiles, ...map }: Props) {
   const placed = map.events.filter((e) => e.location).length;
   const approx = map.events.filter((e) => e.location && e.locationApprox).length;
 
@@ -29,8 +32,9 @@ export function MapPanel({ pref, onPref, ...map }: Props) {
           <>
             <p className="map-gate-title">Veranstaltungen auch auf der Karte zeigen?</p>
             <p>
-              Die Karte kommt von den Servern der OpenStreetMap Foundation. Sie sehen dabei deine IP-Adresse und welchen
-              Kartenausschnitt du ansiehst – nicht deinen gespeicherten Standort.
+              Die Karte kommt{' '}
+              {!tiles ? 'von einem externen Kartendienst' : tiles.host === DEFAULT_TILES.host ? 'von den Servern der OpenStreetMap Foundation' : `vom Kartendienst ${tiles.host}`}.
+              Der Kartendienst sieht dabei deine IP-Adresse und welchen Kartenausschnitt du ansiehst – nicht deinen gespeicherten Standort.
             </p>
           </>
         ) : (
@@ -49,7 +53,7 @@ export function MapPanel({ pref, onPref, ...map }: Props) {
   return (
     <div className="map-frame">
       <Suspense fallback={<div className="map-canvas map-loading">Karte wird geladen …</div>}>
-        <EventMap {...map} />
+        {tiles ? <EventMap {...map} tiles={tiles} /> : <div className="map-canvas map-loading">Karte wird geladen …</div>}
       </Suspense>
       <p className="map-legend">
         {map.events.length === 0
