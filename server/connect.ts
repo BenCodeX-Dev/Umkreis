@@ -37,8 +37,11 @@ export interface ConnectedSource {
   createdAt: string;
   checkedAt?: string;
   approvedAt?: string;
-  /** Set by the operator (`block-site`): the whole site and its subdomains are blocked, not just this address. */
-  blockSite?: boolean;
+  /**
+   * What a block covers. Missing means the whole site and its subdomains: blocks made before
+   * address-only blocks existed were site-wide, and an unclear entry must not open anything up.
+   */
+  blockScope?: 'address';
 }
 
 /** What the organiser sees about their source. */
@@ -117,7 +120,7 @@ function validStored(raw: unknown): ConnectedSource | null {
     createdAt: s.createdAt,
     checkedAt: typeof s.checkedAt === 'string' ? s.checkedAt : undefined,
     approvedAt: typeof s.approvedAt === 'string' ? s.approvedAt : undefined,
-    blockSite: s.blockSite === true ? true : undefined,
+    blockScope: s.blockScope === 'address' ? 'address' : undefined,
   };
 }
 
@@ -170,7 +173,7 @@ export function viewOf(s: ConnectedSource): SourceView {
 
 /** Sites the operator blocked as a whole (`block-site`): no sign-ups, checks or events from there or any subdomain. */
 export function blockedSites(list: ConnectedSource[]): Set<string> {
-  return new Set(list.filter((x) => x.status === 'blocked' && x.blockSite).map((x) => x.site));
+  return new Set(list.filter((x) => x.status === 'blocked' && x.blockScope !== 'address').map((x) => x.site));
 }
 
 /** True if `site` or one of its parent domains is in `blocked`. */
@@ -181,9 +184,39 @@ export function siteBlocked(site: string, blocked: Set<string>): boolean {
   }
 }
 
-/** The entry itself is blocked, or its site is. */
+interface FeedKey { site: string; path: string; params: string[] }
+
+/** An address with spelling differences removed: `www.`, path case and encoding, repeated or trailing slashes. */
+function feedKey(url: string): FeedKey {
+  const u = new URL(url);
+  let p = u.pathname;
+  try {
+    p = decodeURIComponent(p);
+  } catch {
+    /* keep it encoded */
+  }
+  return { site: u.hostname.replace(/^www\./, ''), path: p.toLowerCase().replace(/\/{2,}/g, '/').replace(/\/+$/, ''), params: [...u.searchParams].map(([k, v]) => `${k}=${v}`) };
+}
+
+/** Everything the operator blocked, ready for repeated lookups. */
+export function blockIndex(list: ConnectedSource[]): { sites: Set<string>; addresses: FeedKey[] } {
+  return { sites: blockedSites(list), addresses: list.filter((x) => x.status === 'blocked').map((x) => feedKey(x.url)) };
+}
+
+/**
+ * True if `url` is a blocked address, also when spelled differently or with extra query parameters
+ * (`?x=1` must not get around a block). Parameters of the blocked address still count, so blocking
+ * `…/feed.ics?user=1` on a shared host leaves `?user=2` alone.
+ */
+export function addressBlocked(url: string, idx: { addresses: FeedKey[] }): boolean {
+  const k = feedKey(url);
+  return idx.addresses.some((b) => b.site === k.site && b.path === k.path && b.params.every((p) => k.params.includes(p)));
+}
+
+/** The entry is blocked itself, by its address or by its site. */
 function isBlocked(s: ConnectedSource, list: ConnectedSource[]): boolean {
-  return s.status === 'blocked' || siteBlocked(s.site, blockedSites(list));
+  const idx = blockIndex(list);
+  return s.status === 'blocked' || siteBlocked(s.site, idx.sites) || addressBlocked(s.url, idx);
 }
 
 export function createConnectRegistry(o: ConnectOptions) {
@@ -232,8 +265,9 @@ export function createConnectRegistry(o: ConnectOptions) {
       for (let i = list.length - 1; i >= 0; i--) {
         if (list[i].status === 'pending' && t - Date.parse(list[i].createdAt) > PENDING_TTL_MS) list.splice(i, 1);
       }
-      if (siteBlocked(norm.site, blockedSites(list))) throw new ConnectError(403, 'Diese Website ist für Umkreis gesperrt.');
-      if (list.some((x) => x.url === norm.url && x.status === 'blocked')) throw new ConnectError(403, 'Diese Adresse ist für Umkreis gesperrt.');
+      const idx = blockIndex(list);
+      if (siteBlocked(norm.site, idx.sites)) throw new ConnectError(403, 'Diese Website ist für Umkreis gesperrt.');
+      if (addressBlocked(norm.url, idx)) throw new ConnectError(403, 'Diese Adresse ist für Umkreis gesperrt.');
       if (list.some((x) => x.url === norm.url && x.status !== 'pending')) throw new ConnectError(409, 'Diese Adresse ist schon verbunden.');
       if (list.filter((x) => x.status === 'pending').length >= (o.maxPending ?? 100)) {
         throw new ConnectError(503, 'Gerade sind zu viele Anmeldungen offen. Bitte später erneut versuchen.');
@@ -342,9 +376,9 @@ export function createConnectRegistry(o: ConnectOptions) {
     const out: EventProvider[] = [];
     const live = new Set<string>();
     const list = store.reload();
-    const blocked = blockedSites(list);
+    const blocked = blockIndex(list);
     for (const s of list) {
-      if (s.status !== 'active' || !s.format || siteBlocked(s.site, blocked)) continue;
+      if (s.status !== 'active' || !s.format || siteBlocked(s.site, blocked.sites) || addressBlocked(s.url, blocked)) continue;
       const sig = `${s.url}|${s.code}|${s.format}|${s.name}|${s.area.lat},${s.area.lon}|${s.category ?? ''}`;
       live.add(s.id);
       let b = built.get(s.id);

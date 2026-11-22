@@ -1,7 +1,7 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { loadServerConfig } from './config.ts';
-import { createSourceStore, siteBlocked, type ConnectedSource } from './connect.ts';
+import { addressBlocked, blockIndex, createSourceStore, siteBlocked, type ConnectedSource } from './connect.ts';
 
 /**
  * Operator tool for connected calendars: `npm run sources -- list | approve <id> | remove <id> | block <id> | block-site <id>`.
@@ -47,17 +47,25 @@ if (cmd === 'list') {
   });
 } else if (cmd === 'block') {
   change((s, list, i) => {
-    list[i] = { ...s, status: 'blocked' };
-    return `${s.name}: gesperrt. ${s.url} liefert keine Termine mehr und lässt sich nicht erneut anmelden. Die ganze Website ${s.site} sperren: block-site ${s.id}`;
+    list[i] = { ...s, status: 'blocked', blockScope: 'address' };
+    // Other sign-ups for the same address (also spelled differently) are blocked with it.
+    const idx = blockIndex([list[i]]);
+    let n = 0;
+    for (let j = 0; j < list.length; j++) {
+      if (j === i || list[j].status === 'blocked' || !addressBlocked(list[j].url, idx)) continue;
+      list[j] = { ...list[j], status: 'blocked', blockScope: 'address' };
+      n++;
+    }
+    return `${s.name}: gesperrt${n ? ` (dazu ${n} weitere Anmeldung${n === 1 ? '' : 'en'} derselben Adresse)` : ''}. ${s.url} liefert keine Termine mehr und lässt sich nicht erneut anmelden, auch nicht leicht abgewandelt. Wer die Website selbst kontrolliert, kann aber andere Adressen dort anmelden – dann: block-site ${s.id}`;
   });
 } else if (cmd === 'block-site') {
   change((s, list, i) => {
-    list[i] = { ...s, status: 'blocked', blockSite: true };
+    list[i] = { ...s, status: 'blocked', blockScope: undefined };
     const sites = new Set([s.site]);
-    let n = 0;
+    let n = 1;
     for (let j = 0; j < list.length; j++) {
-      if (!siteBlocked(list[j].site, sites)) continue;
-      list[j] = { ...list[j], status: 'blocked' };
+      if (j === i || list[j].status === 'blocked' || !siteBlocked(list[j].site, sites)) continue;
+      list[j] = { ...list[j], status: 'blocked', blockScope: 'address' };
       n++;
     }
     return `${s.site} und Subdomains: gesperrt (${n} ${n === 1 ? 'Eintrag' : 'Einträge'}). Keine Termine und keine neuen Anmeldungen mehr von dort. Website-Sperre aufheben: remove ${s.id} (die übrigen Einträge bleiben einzeln gesperrt).`;

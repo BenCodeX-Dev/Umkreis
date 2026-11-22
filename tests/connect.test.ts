@@ -278,7 +278,8 @@ describe('connect registry', () => {
     expect(() => reg.submit(form)).toThrow(/schon verbunden/);
 
     const list = JSON.parse(readFileSync(file, 'utf8'));
-    Object.assign(list[0], { status: 'blocked', blockSite: true });
+    list[0].status = 'blocked'; // no scope given, as in blocks from older versions: the whole site
+
     writeFileSync(file, JSON.stringify(list));
     expect(() => reg.submit({ ...form, url: 'https://www.verein.example/anderer.ics' })).toThrow(/gesperrt/);
     expect(() => reg.remove(source.id, key)).toThrow(/Betreiber/);
@@ -305,9 +306,12 @@ describe('connect registry', () => {
 
   it('a blocked address stops only that address', async () => {
     const { reg, file, a, b } = await twoLive('https://verein.example/jugend.ics');
-    editFile(file, (l) => void (l.find((x) => x.id === a.source.id)!.status = 'blocked'));
+    editFile(file, (l) => void Object.assign(l.find((x) => x.id === a.source.id)!, { status: 'blocked', blockScope: 'address' }));
     expect(reg.providers()).toHaveLength(1);
-    expect(() => reg.submit(form)).toThrow(/Adresse ist für Umkreis gesperrt/);
+    for (const url of [form.url, `${form.url}?x=1`, 'https://www.verein.example//Kalender.ics/', 'https://verein.example/kalender%2Eics#neu']) {
+      expect(() => reg.submit({ ...form, url })).toThrow(/Adresse ist für Umkreis gesperrt/);
+    }
+    expect(reg.submit({ ...form, url: 'https://verein.example/senioren.ics' }).source.status).toBe('pending');
     expect(() => reg.remove(a.source.id, a.key)).toThrow(/Betreiber/);
     await expect(reg.check(a.source.id, a.key)).rejects.toThrow(/gesperrt/);
     expect(reg.get(b.source.id, b.key).source.status).toBe('active');
@@ -315,13 +319,24 @@ describe('connect registry', () => {
 
   it('a blocked site covers its subdomains and every spelling of the host', async () => {
     const { reg, file, a, b } = await twoLive('https://jugend.verein.example/k.ics');
-    editFile(file, (l) => void Object.assign(l.find((x) => x.id === a.source.id)!, { status: 'blocked', blockSite: true }));
+    editFile(file, (l) => void (l.find((x) => x.id === a.source.id)!.status = 'blocked'));
     expect(reg.providers()).toHaveLength(0);
     await expect(reg.check(b.source.id, b.key)).rejects.toThrow(/gesperrt/);
     for (const url of ['https://VEREIN.example./neu.ics', 'https://www.verein.example/neu.ics', 'https://jugend.verein.example/neu.ics']) {
       expect(() => reg.submit({ ...form, url })).toThrow(/Website ist für Umkreis gesperrt/);
     }
     expect(reg.submit({ ...form, url: 'https://anderer-verein.example/k.ics' }).source.status).toBe('pending');
+  });
+
+  it('a second sign-up for a blocked address cannot go live', async () => {
+    const { reg, files, file } = setup('auto');
+    const a = reg.submit(form);
+    const b = reg.submit({ ...form, url: `${form.url}?neu=1` });
+    files.set(`${form.url}?neu=1`, ics(b.source.code));
+    editFile(file, (l) => void Object.assign(l.find((x) => x.id === a.source.id)!, { status: 'blocked', blockScope: 'address' }));
+    await expect(reg.check(b.source.id, b.key)).rejects.toThrow(/gesperrt/);
+    expect(reg.get(b.source.id, b.key).source.status).toBe('pending');
+    expect(reg.providers()).toHaveLength(0);
   });
 
   it('keeps an operator block made while a check is downloading', async () => {
